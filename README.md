@@ -9,12 +9,12 @@
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/DeepSeek%20Harness-0.2.1--rc.5-4D6BFE?style=flat-square&labelColor=161b22&logo=deepseek&logoColor=white" alt="DeepSeek Harness 0.2.1-rc.5" /></a>
   <a href="./package.json"><img src="https://img.shields.io/badge/package-v0.1.7-CB3837?style=flat-square&labelColor=161b22&logo=npm&logoColor=white" alt="package version 0.1.7" /></a>
   <a href="https://github.com/YAN3RA/dsh-agent-efficiency-guard/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-configured-208B3A?style=flat-square&labelColor=161b22&logo=githubactions&logoColor=white" alt="CI configured" /></a>
-  <a href="./docs/acceptance-report.md"><img src="https://img.shields.io/badge/tests-203%20passed-208B3A?style=flat-square&labelColor=161b22&logo=vitest&logoColor=white" alt="203 tests passed" /></a>
+  <a href="https://github.com/YAN3RA/dsh-agent-efficiency-guard/blob/main/docs/acceptance-report.md"><img src="https://img.shields.io/badge/tests-203%20passed-208B3A?style=flat-square&labelColor=161b22&logo=vitest&logoColor=white" alt="203 tests passed" /></a>
   <a href="https://github.com/YAN3RA/dsh-agent-efficiency-guard/stargazers"><img src="https://img.shields.io/github/stars/YAN3RA/dsh-agent-efficiency-guard?style=flat-square&color=dbab09&labelColor=161b22&logo=github&logoColor=white" alt="GitHub stars" /></a>
   <a href="https://github.com/YAN3RA/dsh-agent-efficiency-guard"><img src="https://img.shields.io/badge/npm-not%20published-6c757d?style=flat-square&labelColor=161b22&logo=npm&logoColor=white" alt="npm not published" /></a>
 </p>
 
-> 这是一个已完成本地构建和 Windows 测试的实现阶段版本。当前没有切换生产 `desktop` profile，也没有发布 npm 包；真实桌面启动验证需要在隔离 DSH profile 中继续完成。
+> 已完成 Windows 全量测试、隔离发布包安装和 DSH 0.2.1-rc.5 Web 冷启动验证。超长 Save Token 恢复、热重载及真实 Electron / MCP Session 验收仍有限制；详见 [验收报告](https://github.com/YAN3RA/dsh-agent-efficiency-guard/blob/main/docs/acceptance-report.md)。本轮未修改生产配置，也未发布 npm。
 
 ## 目录
 
@@ -86,7 +86,7 @@ DSH Agent 同时看到很多 Tool、MCP Tool 和 Skill 时，常见问题是：
 - Node.js `v24.22.1`
 - pnpm `11.28.5`
 - DSH CLI `0.2.1-rc.5`
-- DSH peer 测试包 `0.2.1-rc.3`
+- DSH peer 类型检查与单测基线 `0.2.1-rc.3`，隔离发布包运行时基线 `0.2.1-rc.5`
 - Windows 环境全量测试通过
 
 目录职责：
@@ -118,13 +118,19 @@ npm pack --dry-run
 
 ### 2. 安装到隔离 DSH profile
 
-只建议先安装到 disposable / isolated profile：
+在专用终端中创建独立 `DSH_HOME`，使用宿主 Web 模板和本地发布包验证：
 
 ```powershell
-dsh plugin --profile <isolated-profile> add .
+$env:DSH_HOME = Join-Path $env:TEMP ('dsh-guard-' + [guid]::NewGuid().ToString('N'))
+dsh --profile guard-smoke --from-default-profile web --dump-config
+npm pack --pack-destination $env:DSH_HOME
+dsh plugin --profile guard-smoke add (Join-Path $env:DSH_HOME 'dsh-agent-efficiency-guard-0.1.7.tgz')
+dsh --profile guard-smoke --host 127.0.0.1 --port 0 --no-open
 ```
 
-不要直接切换正在使用的 `desktop` profile。切换前必须复制 profile，备份 Cordis patch、旧 Capability Menu 状态文件，并准备回滚路径。
+此方式不复制生产凭据或外部 MCP 连接；结束后关闭专用终端，避免继续使用测试 `DSH_HOME`。本包尚未发布 npm，不要把 registry 安装写成已可用。`pnpm bridge` 是源码开发辅助命令，不属于发布包安装步骤。
+
+不要直接切换正在使用的 `desktop` profile。生产变更前先备份配置和状态、关闭宿主，再按切换与回滚方案操作。
 
 ### 3. Agent 使用按需能力
 
@@ -181,7 +187,7 @@ pnpm exec vitest run tests/guard-core.spec.ts
 - MCP Connector Session Tool 不能被 `meta_invoke` 绕过；
 - 设置页和 Typert 远程接口可以加载。
 
-生产 `desktop` profile 尚未切换。详见 [验收报告](docs/acceptance-report.md)。
+本轮未修改或重启生产 `desktop`。现场清单已包含本插件源码链接和 bundle，不能据此认定生产验收通过；详见 [验收报告](https://github.com/YAN3RA/dsh-agent-efficiency-guard/blob/main/docs/acceptance-report.md)。
 
 ## 贡献指南
 
@@ -210,7 +216,7 @@ git diff --check
 ### 提交贡献
 
 1. Fork 仓库并创建功能分支。
-2. 阅读 [AGENTS.md](AGENTS.md)、[HANDOFF.md](HANDOFF.md) 和 `docs/` 下的审计文档。
+2. 阅读 [AGENTS.md](https://github.com/YAN3RA/dsh-agent-efficiency-guard/blob/main/AGENTS.md)、[HANDOFF.md](https://github.com/YAN3RA/dsh-agent-efficiency-guard/blob/main/HANDOFF.md) 和 `docs/` 下的审计文档。
 3. 修改源码与测试。
 4. 运行完整检查并把实际结果写入 PR。
 5. 不提交 `node_modules/`、`lib/`、临时 `.tgz`、凭据、session 或本机 profile。

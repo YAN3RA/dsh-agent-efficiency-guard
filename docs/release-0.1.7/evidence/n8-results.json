@@ -1,0 +1,81 @@
+{
+  "task": "N8",
+  "date": "2026-11-01",
+  "runtime": "DSH 0.2.1-rc.5",
+  "saveToken": "2.4.1",
+  "guardPackage": "0.1.7 actual final tarball",
+  "environment": "fresh independent scratch DSH_HOME, public web template, explicit scratch spill root",
+  "modelRequests": 0,
+  "assertionsPassed": true,
+  "cause": "Host dsh-spill-policy bounds content before Save Token caches the accepted post-execute content. Save Token expands that bounded content, whose embedded host locator still points to the complete formatted result.",
+  "pricing": {
+    "formulaForSingleTextBlock": "ceil(UTF16_length / 4) + 4",
+    "defaultMaxInlineTokens": 12500,
+    "singleTextBlockBoundaryChars": 49984,
+    "raisedMaxInlineTokens": 200000,
+    "zeroDisablesPolicy": false
+  },
+  "samples": [
+    {
+      "maxInlineTokens": 12500,
+      "inputChars": 174389,
+      "inputSha256": "c8604cd52a3c4eb10ba2a04cdb1059bd66ed227e920644ef31feeb7bc781ca94",
+      "compressedChars": 25920,
+      "expandedValueChars": 49933,
+      "expandedContentChars": 49933,
+      "saveTokenFileChars": 49933,
+      "expandedAndSaveTokenFileSha256": "9c4542f1f2cc40e6ba147010f4faa4043bc8e9cc2ad21a371d756341cd8568b1",
+      "cacheTruncatedFlag": false,
+      "hasHostOmissionNotice": true,
+      "hostSpillFileChars": 174389,
+      "hostSpillFileSha256": "c8604cd52a3c4eb10ba2a04cdb1059bd66ed227e920644ef31feeb7bc781ca94",
+      "hostSpillEqualsInput": true
+    },
+    {
+      "maxInlineTokens": 12500,
+      "inputChars": 49984,
+      "inputSha256": "d7be40d3ea357729667846a480fe27c44ba10e22d1d1002d0c7153f590662d66",
+      "compressedChars": 755,
+      "expandedValueChars": 49984,
+      "expandedContentChars": 49984,
+      "saveTokenFileChars": 49984,
+      "expandedEqualsInput": true,
+      "hasHostOmissionNotice": false
+    },
+    {
+      "maxInlineTokens": 12500,
+      "inputChars": 49985,
+      "inputSha256": "cb31608a05b1709a8bc8f1f020c4cf829bf29f92d74313970a2862a5d8cfe5af",
+      "compressedChars": 1403,
+      "expandedValueChars": 49930,
+      "expandedContentChars": 49930,
+      "saveTokenFileChars": 49930,
+      "expandedAndSaveTokenFileSha256": "6b767539114f4fe0a84585f72389d4fc00b28b6e25f651b9d35c08b0d2e1d892",
+      "cacheTruncatedFlag": false,
+      "hasHostOmissionNotice": true,
+      "hostSpillFileChars": 49985,
+      "hostSpillFileSha256": "cb31608a05b1709a8bc8f1f020c4cf829bf29f92d74313970a2862a5d8cfe5af",
+      "hostSpillEqualsInput": true
+    },
+    {
+      "maxInlineTokens": 200000,
+      "inputChars": 174389,
+      "inputSha256": "c8604cd52a3c4eb10ba2a04cdb1059bd66ed227e920644ef31feeb7bc781ca94",
+      "compressedChars": 25896,
+      "expandedValueChars": 174389,
+      "expandedContentChars": 174389,
+      "saveTokenFileChars": 174389,
+      "expandedAndSaveTokenFileSha256": "c8604cd52a3c4eb10ba2a04cdb1059bd66ed227e920644ef31feeb7bc781ca94",
+      "expandedEqualsInput": true,
+      "cacheTruncatedFlag": false,
+      "hasHostOmissionNotice": false
+    }
+  ],
+  "productionConfigurationChanged": false,
+  "pluginRuntimeSourceChanged": false,
+  "limitations": [
+    "Exact retained preview length depends on notice/locator length; historical approximately 49932 and this run 49933 are not distinct limits.",
+    "Single-text-block boundary uses UTF-16 code units and heuristic pricing, not a universal byte limit or actual model tokenizer boundary.",
+    "No arbitrary-size, cache-eviction or process-restart recovery claim is made; Save Token has a separate 262144-character memory cache limit."
+  ]
+}

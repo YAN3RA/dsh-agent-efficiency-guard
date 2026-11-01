@@ -1,0 +1,46 @@
+{
+  "task": "N11",
+  "date": "2026-11-01",
+  "runtime": "DSH 0.2.1-rc.5",
+  "connector": "dsh-mcp-connector 0.2.87",
+  "environment": "fresh independent scratch DSH_HOME, public web template, no production credentials",
+  "modelRequests": 0,
+  "coldStart": {
+    "pageErrors": 0,
+    "serverErrors": 0
+  },
+  "profilePatchReload": {
+    "operation": "changed isolated profile cordis.patch.yml while Web CLI host was running",
+    "pageErrors": 0,
+    "serverErrors": 0,
+    "interpretation": "ordinary profile patch reload did not trigger the Client Modules HMR replace path in this CLI setup"
+  },
+  "packageManagerWhileRunning": {
+    "operation": "removed and reinstalled dsh-mcp-connector@0.2.87 in isolated profile while host was running",
+    "pageErrors": 0,
+    "serverErrors": 0,
+    "profileRestored": true,
+    "interpretation": "profile package manager alone did not trigger Web client HMR in this CLI setup"
+  },
+  "sourceDiagnosis": {
+    "slotAssemblyError": {
+      "owner": "DSH Client Modules/Client UI Renderer lifecycle",
+      "mechanism": "serial client entry replacement can temporarily unload the ui-session scope adapter while session-maybe remains rendered"
+    },
+    "connectorLayoutError": {
+      "owner": "dsh-mcp-connector client unload path",
+      "mechanism": "client inject declares slots/sessions/workspaces/conversation but not layout; disposeNativeEntry calls ctx.get(layout) ?? ctx.layout during layout provider teardown"
+    },
+    "agentPluginTrigger": false,
+    "thirdPartyPatchApplied": false
+  },
+  "supportedMitigation": {
+    "agentPlugin": "do not hot-replace running host; cold restart or page refresh after install/profile/package changes",
+    "connector": "upstream-only candidate: declare layout in the Connector client inject or remove the unsafe ctx.layout fallback; not changed in this task"
+  },
+  "limitations": [
+    "The exact Electron HMR/rebuilt frame that produced the historical errors was not triggered by the public Web CLI profile patch or package-manager operations.",
+    "No real Electron renderer was started in this N11 run.",
+    "No third-party package or production profile was modified."
+  ]
+}

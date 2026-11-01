@@ -41,3 +41,9 @@ The Guard never reads or stores hidden reasoning. It uses only observable DSH ev
 Default behavior is one convergence steer per Turn. After that steer, two consecutive stop boundaries with no new result or user progress mark the Turn as stopped; the next model step is rejected through the public admission path. A new Turn creates a fresh state. Existing tool calls are not rewritten or interrupted in flight.
 
 The Guard reports a bounded reason such as `Step budget reached`, `Tool budget reached`, `Time budget reached`, or `No-progress loop stopped`. It does not synthesize a final answer or claim task completion.
+
+## Verified upstream result retention (N8)
+
+DSH `0.2.1-rc.5` enables `dsh-spill-policy` with `maxInlineTokens: 12500`. In the tested bundle order, that Host post-execute policy saves the complete formatted result and produces a bounded head/tail preview before Save Token processes the accepted content. `save_token_expand` can therefore return that upstream preview even when its own `truncated` flag is false. This is not a Guard rewrite.
+
+N8 verified the embedded Host spill locator against the full 174,389-character input using SHA-256. Single-text-block boundary tests at 49,984/49,985 matched the Host heuristic; raising only the isolated Host cap to 200,000 also restored the complete value/content/file. Prefer reading the Host locator in bounded ranges under the default policy; the tested raised cap is not a production recommendation. No production settings or third-party code were changed. See [diagnosis and limits](release-0.1.7/n8-diagnosis.md).

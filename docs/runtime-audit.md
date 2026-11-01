@@ -6,9 +6,9 @@
 - npm: `12.2.1`
 - pnpm: `11.28.5`
 - DSH CLI: `0.2.1-rc.5`
-- Profile: `desktop`
-- `dsh --profile desktop --dump-config`: blocked by the Electron-owned profile guard (`profile "desktop" is managed exclusively by the Electron application`); no production profile files were changed.
-- Existing desktop bundle includes `@daweifu/capability-menu@0.1.7`, `dsh-plugin-save-token@2.4.1`, and `dsh-mcp-connector@0.2.87`.
+- Original audit profile: `desktop`; CLI dump is blocked by Electron ownership (`profile "desktop" is managed exclusively by the Electron application`).
+- 2026-11-01 verification used a fresh `web` template in an independent scratch `DSH_HOME`, profile `guard-smoke`; no production credentials or external connections were copied.
+- Production package inventory lists `@daweifu/capability-menu@0.1.7`, `dsh-plugin-save-token@2.4.1`, `dsh-mcp-connector@0.2.87`, and this plugin as a source link. Only this plugin, not the old Capability Menu, appears in its bundle list.
 
 ## Source baseline
 
@@ -34,4 +34,4 @@ The baseline had:
 
 ## Production boundary
 
-No `C:\Users\yansui\.dsh\profiles\desktop` file, bundle, package installation, or production state file was modified. Installation and profile switching remain a later migration step requiring an isolated test profile and explicit rollback verification.
+This round did not write production profile configuration or restart Electron. The production manifest already points at this workspace through a source link, so building does update its linked `lib/` target; production runtime acceptance is not implied. Isolated tarball install, Web cold start and uninstall rollback have now been exercised. Large-result recovery, hot reload and real Electron/MCP authorization limits are recorded in [the current report](release-0.1.7/report.md).

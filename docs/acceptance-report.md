@@ -1,46 +1,38 @@
-# Acceptance report — implementation slice
+# Acceptance report — 0.1.7 candidate
 
-## Passed checks
+Updated: 2026-11-01. Full evidence and limitations: [release-0.1.7/report.md](release-0.1.7/report.md).
 
-Executed in `plugin` with Node.js `v24.22.1`, pnpm `11.28.5`, and DSH peer packages `0.2.1-rc.3`:
+## Local checks
 
-- `pnpm install --frozen-lockfile` — passed.
-- `pnpm exec vitest run tests/guard-core.spec.ts` — 6/6 passed.
+- Node.js `v24.22.1`, pnpm `11.28.5`; typecheck/unit tests use locked DSH peers `0.2.1-rc.3`.
 - `pnpm typecheck` — passed.
-- `pnpm test` — 14 test files, 203 tests passed.
-- `pnpm build` — passed; client bundle emitted successfully.
+- `pnpm test` — 14 files, 203 tests passed.
+- `pnpm build` — passed; browser bundle emitted.
+- `npm pack --dry-run` — passed including prepare/build; the final 63-file tarball has all 14 export targets, and 60 runtime files are byte-identical to the smoke-tested installation. See [package evidence](release-0.1.7/evidence/package.json).
 
-The full test suite initially had 95 Windows failures because fixtures used `/tmp`. The fixtures were changed to `node:os` `tmpdir()` plus platform-safe path joins; the final full run passed without changing production behavior.
+The earlier 95 Windows fixture failures were resolved using `node:os` `tmpdir()` and platform-safe joins. No new runtime behavior was added in this acceptance round; the package metadata removes the nonexistent `./src/*` export and README installation/documentation links were corrected.
 
-## Implemented in this slice
+## Isolated host verification
 
-- Capability Menu source baseline copied into a new workspace plugin package.
-- Resident / On-demand / Disabled capability catalog behavior retained.
-- `meta_search` and `meta_invoke` behavior retained.
-- Step, business-tool, and duration budgets.
-- Per-Agent / per-Turn state isolation.
-- Stable argument signatures without persisting raw arguments.
-- Duplicate-call reminder with bounded state.
-- One convergence hint per Turn.
-- Observable no-progress loop protection with next-step rejection.
-- Public `ctx.tools.guard()` final denial.
-- Public Agent Hook integration and cleanup.
-- PI-Desktop / Save Token ownership boundary and safe fallback documentation.
-- Windows-safe test fixtures.
-- Package runtime identity changed to `dsh-agent-efficiency-guard`.
+DSH `0.2.1-rc.5`, an independent scratch `DSH_HOME`, fresh `web` template and actual `0.1.7` tarball were used. Production credentials, Sessions and MCP connections were not copied. Save Token `2.4.1` and MCP Connector `0.2.87` were installed from the local cache.
 
-## Not claimed yet
+- Capability tiers, `meta_search`, `meta_invoke`, caller Session preservation and caller Scope denial passed through public APIs using synthetic Agent subjects with real SessionStore entries and per-Agent Scope.
+- Disabled direct/meta rejection, duplicate reminder, Step/Tool hard budgets, Agent/Turn isolation and no-progress next-step rejection passed. These tests did not run a model.
+- The complete first runtime assertion run had 10 passes and one failure for a 174,389-character Save Token recovery sample. Only Save Token was then retested with a 46,289-character sample: compressed to 25,793 characters and exactly recovered all 46,289 characters in value and display.
+- Connector management tools mounted after host readiness; no external MCP server connection was made.
+- Edge cold navigation and capability settings had zero captured exceptions; the actual 1440×1000 [screenshot](release-0.1.7/evidence/capability-menu.png) shows all three tiers.
+- `capabilityPolicy/getConfig`, `classifyAll` and `catalogVersion` returned HTTP 200 with business `ok:true`.
+- Rollback stopped the isolated server, removed the three test packages and restored the initial profile patch. The effective config contains no test entries; the baseline server returns homepage 200 and removed capability API 404.
 
-- The production `desktop` profile has not been switched.
-- No npm package was published.
-- No isolated DSH profile installation smoke test has been run.
-- The Electron-owned `desktop` profile cannot be dumped by the CLI, so actual browser startup and remote API loading remain to be verified inside an isolated profile.
-- No documented PI-Desktop Token Saver / Prompt Cache adapter was available locally; the plugin therefore does not claim direct host service reuse.
-- The management UI has not yet added dedicated Guard statistics; the existing capability UI remains available.
+Structured evidence: [results.json](release-0.1.7/evidence/results.json). Raw logs, profiles and tokens are excluded from the repository.
 
-## Suggested isolated-profile verification
+## Remaining limits — no full production sign-off
 
-1. Copy the `desktop` profile to a disposable test profile.
-2. Install this package into that profile without loading the old Capability Menu package.
-3. Verify `meta_search`, `meta_invoke`, resident/on-demand/disabled policy, `ctx.tools.guard()`, Save Token coexistence, MCP Session restrictions, and browser settings loading.
-4. Capture the isolated profile startup result and then either keep the profile or roll it back.
+- **Large-result cause identified (N8 complete):** Host `dsh-spill-policy` defaults to 12,500 estimated inline tokens. Save Token caches the upstream head/tail preview, so expansion is not necessarily the initial tool output. The fresh 174,389-character sample expanded to 49,933, but its embedded host spill locator recovered the complete file with matching SHA-256. Boundary tests at 49,984/49,985 and an isolated-only 200,000-token override confirmed the cause; the latter restored all 174,389 characters in value, content and Save Token file. See [N8 diagnosis](release-0.1.7/n8-diagnosis.md). Production settings remain unchanged; arbitrary-size/restart recovery is not claimed.
+- **Hot reload cause identified (N11 complete):** cold start, isolated profile patch reload and isolated package-manager operations were clean, but the public Web CLI did not emit the Electron Client Modules `rebuilt` replace frame. Source inspection attributes `session-maybe` to the host's serial teardown window and Connector `layout` to its unload path missing a `layout` Cordis inject/using an unsafe fallback. The supported mitigation is cold restart/page refresh; Connector remediation belongs upstream. See [N11 diagnosis](release-0.1.7/n11-diagnosis.md) and [evidence](release-0.1.7/evidence/n11-results.json).
+- Real Electron renderer and external MCP Session authorization remain blocked (N9): the active user-owned Electron instance holds the single-instance lock, the packaged app exposed no usable CDP endpoint, and an independent DSH_HOME desktop profile was not created. Current production manifest metadata is not a substitute for isolated renderer acceptance. See [N9 evidence](release-0.1.7/evidence/n9-results.json).
+- No public host Token Saver/Prompt Cache adapter is claimed. Save Token retains compression/original recovery ownership; Guard uses public events and hashes only.
+- No dedicated Guard statistics UI was added.
+- No npm publish, tag creation, Git commit/push or production configuration change/restart was performed in this round; N10 release actions remain blocked by N9.
+
+The production manifest already listed this plugin as a local source link and bundle when inspected. The old Capability Menu remains a dependency but is absent from the bundle list. Building this workspace updates the source link's `lib/`; it is not an immutable deployment. See the prepared [production rollout/rollback plan](release-0.1.7/production-rollout.md).

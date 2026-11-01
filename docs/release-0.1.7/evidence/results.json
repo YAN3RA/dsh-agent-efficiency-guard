@@ -1,0 +1,145 @@
+{
+  "date": "2026-11-01",
+  "sourceCommit": "cc382ee9a564cab72053a342c98cef04882af55b",
+  "runtime": "DSH 0.2.1-rc.5",
+  "profile": "guard-smoke under independent DSH_HOME",
+  "modelRequests": 0,
+  "mainAttempt": {
+    "subject": "synthetic Agent subjects, real SessionStore and public events; no model requests",
+    "publicDependencies": {
+      "tools": true,
+      "storageDomain": true,
+      "loader": true,
+      "workspaceRegistry": true
+    },
+    "results": [
+      {
+        "name": "resident/on-demand/disabled policy",
+        "passed": true
+      },
+      {
+        "name": "meta_search list and detail",
+        "passed": true
+      },
+      {
+        "name": "meta_invoke preserves caller session",
+        "passed": true
+      },
+      {
+        "name": "Disabled rejects direct and meta execution",
+        "passed": true
+      },
+      {
+        "name": "caller scope denies a known MCP tool id",
+        "passed": true
+      },
+      {
+        "name": "Guard duplicate reminder at most once",
+        "passed": true
+      },
+      {
+        "name": "Guard hard step budget and turn isolation",
+        "passed": true
+      },
+      {
+        "name": "Guard business tool budget is final denial",
+        "passed": true
+      },
+      {
+        "name": "Guard no-progress stop and one steer",
+        "passed": true
+      },
+      {
+        "name": "Save Token compression and exact original recovery",
+        "passed": false,
+        "errorSummary": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:"
+      },
+      {
+        "name": "MCP Connector management tools mounted without external connections",
+        "passed": true,
+        "tools": [
+          "mcp_connector_catalog",
+          "mcp_connector_connect",
+          "mcp_connector_configure",
+          "mcp_connector_import_json",
+          "mcp_connector_export_config",
+          "mcp_connector_snapshot",
+          "mcp_connector_install_from_url",
+          "mcp_connector_status",
+          "mcp_connector_scope",
+          "mcp_connector_health_check",
+          "mcp_connector_policy",
+          "mcp_connector_migration_preview",
+          "mcp_connector_migrate_legacy",
+          "mcp_connector_set_enabled",
+          "mcp_connector_reconnect",
+          "mcp_connector_session_tools",
+          "mcp_connector_rename",
+          "mcp_connector_get_editable_config",
+          "mcp_connector_reconfigure",
+          "mcp_connector_disconnect",
+          "mcp_connector_refresh_catalog",
+          "mcp_connector_publish",
+          "mcp_connector_tools_list",
+          "mcp_connector_tool_search",
+          "mcp_connector_tool_detail"
+        ]
+      }
+    ]
+  },
+  "boundedSaveTokenAttempt": [
+    {
+      "name": "Save Token compression and exact original recovery",
+      "passed": true,
+      "originalChars": 46289,
+      "compressedChars": 25793,
+      "expandedValueChars": 46289,
+      "expandedDisplayChars": 46289
+    }
+  ],
+  "rpc": [
+    {
+      "method": "capabilityPolicy/getConfig",
+      "httpStatus": 200,
+      "ok": true
+    },
+    {
+      "method": "capabilityPolicy/classifyAll",
+      "httpStatus": 200,
+      "ok": true,
+      "catalogRows": 68
+    },
+    {
+      "method": "capabilityPolicy/catalogVersion",
+      "httpStatus": 200,
+      "ok": true
+    }
+  ],
+  "browser": {
+    "coldStartExceptionCount": 0,
+    "settingsExceptionCount": 0,
+    "menuPresent": true,
+    "tiersPresent": true,
+    "screenshot": {
+      "file": "capability-menu.png",
+      "width": 1440,
+      "height": 1000,
+      "bytes": 53765
+    }
+  },
+  "rollback": {
+    "homeHttpStatus": 200,
+    "capabilityPolicyHttpStatus": 404,
+    "packagesRemoved": [
+      "dsh-agent-efficiency-guard",
+      "dsh-plugin-save-token",
+      "dsh-mcp-connector"
+    ],
+    "baselinePatchRestored": true
+  },
+  "limitations": [
+    "174389-character sample did not recover byte-for-byte; expanded value was approximately 50000 characters. Truncation layer is not yet located.",
+    "Real Electron renderer and external MCP session authorization were not exercised.",
+    "Hot reload produced host/Connector client exceptions; clean cold navigation had zero exceptions."
+  ]
+}

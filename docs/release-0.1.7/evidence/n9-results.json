@@ -1,0 +1,30 @@
+{
+  "task": "N9",
+  "date": "2026-11-01",
+  "status": "blocked",
+  "runtime": "DSH Desktop 0.2.1-rc.5 / Electron 44.7.0",
+  "modelRequests": 0,
+  "verified": {
+    "currentElectronHost": true,
+    "currentHostProcessCommand": "@deepseek-ai/dsh-desktop-host/lib/index.js loads C:/Users/yansui/.dsh/profiles/desktop",
+    "currentProductionManifestHasPluginDependency": true,
+    "currentProductionManifestHasPluginBundle": true,
+    "currentHostLocalListener": "127.0.0.1:3082",
+    "currentHostRootExternalRequest": "not-found without renderer authentication",
+    "cdpEndpoint": false,
+    "isolatedElectronProfileCreated": false
+  },
+  "blockers": [
+    "An existing user-owned DeepSeek Harness Electron instance holds the single-instance lock.",
+    "Launching the packaged Electron with an independent DSH_HOME did not create the scratch desktop profile; the app exited/forwarded under the existing single-instance owner.",
+    "The packaged app exposes no configured CDP/remote-debugging endpoint; common CDP ports and the Host HTTP port do not provide an authenticated renderer session.",
+    "The current desktop renderer cannot be inspected safely without taking over or closing the user's active Electron instance."
+  ],
+  "notClaimed": [
+    "No real renderer settings-page interaction was claimed.",
+    "No real model turn or external MCP Session authorization was performed.",
+    "No production profile was changed, restarted, or used for destructive testing."
+  ],
+  "requiredToContinue": "User closes the active DeepSeek Harness instance, then a fresh packaged Electron launch with independent DSH_HOME/userData and a supported renderer inspection path must be verified before release.",
+  "n10ReleaseBlocked": true
+}
