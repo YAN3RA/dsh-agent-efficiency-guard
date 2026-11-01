@@ -1,55 +1,113 @@
 # dsh-agent-efficiency-guard
-[![CI](https://github.com/YAN3RA/dsh-agent-efficiency-guard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/YAN3RA/dsh-agent-efficiency-guard/actions/workflows/ci.yml)
 
-这是一个给 DSH 用的能力目录 + Agent 效率守卫插件。它已经把上游 Capability Menu 的核心能力和预算/死循环防护放进同一个可构建包里。
+<p align="center">
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/DeepSeek%20Harness-0.2.1--rc.5-4D6BFE?style=flat-square&labelColor=161b22&logo=deepseek&logoColor=white" alt="DeepSeek Harness 0.2.1-rc.5" /></a>
+  <a href="./package.json"><img src="https://img.shields.io/badge/package-v0.1.7-CB3837?style=flat-square&labelColor=161b22&logo=npm&logoColor=white" alt="package version 0.1.7" /></a>
+  <a href="https://github.com/YAN3RA/dsh-agent-efficiency-guard/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-configured-208B3A?style=flat-square&labelColor=161b22&logo=githubactions&logoColor=white" alt="CI configured" /></a>
+  <a href="./docs/acceptance-report.md"><img src="https://img.shields.io/badge/tests-203%20passed-208B3A?style=flat-square&labelColor=161b22&logo=vitest&logoColor=white" alt="203 tests passed" /></a>
+  <a href="https://github.com/YAN3RA/dsh-agent-efficiency-guard/stargazers"><img src="https://img.shields.io/github/stars/YAN3RA/dsh-agent-efficiency-guard?style=flat-square&color=dbab09&labelColor=161b22&logo=github&logoColor=white" alt="GitHub stars" /></a>
+  <a href="https://github.com/YAN3RA/dsh-agent-efficiency-guard"><img src="https://img.shields.io/badge/npm-not%20published-6c757d?style=flat-square&labelColor=161b22&logo=npm&logoColor=white" alt="npm not published" /></a>
+</p>
 
-## 现在做到了什么
+<p align="center">
+  <strong>把能力目录、按需调用、预算守卫和可观察的死循环防护放进一个 DSH 插件。</strong>
+</p>
 
-### 能力目录
+> 这是一个已完成本地构建和 Windows 测试的实现阶段版本。当前没有切换生产 `desktop` profile，也没有发布 npm 包；真实桌面启动验证需要在隔离 DSH profile 中继续完成。
 
-- 统一索引 DSH 原生工具、MCP 工具和 Skills。
-- 每项能力支持三档：`resident` 常驻、`on-demand` 按需、`disabled` 禁用。
-- Agent 可以通过 `meta_search` 搜索按需能力，再通过 `meta_invoke` 精确查看/执行 Tool 或加载 Skill。
-- Disabled 不只是从提示词隐藏，实际执行入口也会拒绝。
-- MCP Connector 的 Session 权限仍由 MCP Connector 和 DSH 宿主控制，本插件不绕过、不偷偷激活。
+## 目录
 
-### Agent 效率守卫
+- [它解决什么问题](#它解决什么问题)
+- [插件能做到什么](#插件能做到什么)
+- [环境与目录](#环境与目录)
+- [安装与使用](#安装与使用)
+- [验证插件结果](#验证插件结果)
+- [贡献指南](#贡献指南)
+- [许可证](#许可证)
+
+## 它解决什么问题
+
+DSH Agent 同时看到很多 Tool、MCP Tool 和 Skill 时，常见问题是：
+
+- 每次请求都携带大量低频 Tool Schema，浪费上下文和 Token；
+- Agent 反复搜索、重复读取或重复执行同一个调用；
+- 模型不断产生步骤，但没有新的有效进展；
+- 能力被前端隐藏了，实际执行入口却没有真正拒绝；
+- Token Saver、MCP Connector 和能力菜单各自维护，边界不清楚。
+
+这个插件把能力目录和执行守卫放到一个包里，同时保留 DSH 原生执行管线、`dsh-plugin-save-token` 和 `dsh-mcp-connector` 的职责边界。
+
+## 插件能做到什么
+
+### 1. 统一能力目录
+
+- 索引 DSH 原生工具、MCP 工具和 Skills。
+- 每项能力支持 `resident` 常驻、`on-demand` 按需、`disabled` 禁用。
+- `meta_search` 搜索按需能力。
+- `meta_invoke` 按精确 `id + kind` 查看、执行 Tool 或加载 Skill。
+- Disabled 不只是从 Prompt 隐藏，执行入口也会拒绝。
+- MCP Connector 的 Session 权限仍由 MCP Connector / DSH 宿主控制，本插件不绕过、不偷偷激活。
+
+### 2. Agent Efficiency Guard
 
 - `quick`、`normal`、`deep` 三种预算档位。
 - 分开统计模型 Step 和业务 Tool Call。
-- 限制单轮 Step 数、业务工具数和总时长。
-- 相同工具 + 相同参数重复执行时提醒 Agent 检查已有结果。
-- 只根据可观察事件判断无进展，不读取或保存模型隐藏思维链。
-- 默认最多发出一次收敛提示；提示后连续无进展达到阈值，会阻止新的模型步骤。
-- 每个 Agent、每个 Turn 独立计数，取消、结束和 dispose 时清理状态。
+- 限制单轮 Step 数、业务工具数和持续时间。
+- 相同 Tool + 相同参数重复完成时提醒 Agent 检查已有结果。
+- 通过公开 DSH `ctx.tools.guard()` 做最终工具预算拒绝。
+- 默认最多一次收敛提示；提示后连续无进展达到阈值，阻止新的模型步骤。
+- 状态按 Agent / Turn 隔离，取消、结束和 dispose 时清理。
 
-### 宿主 Token 边界
+### 3. 不读取隐藏思维链
+
+循环防护只使用可观察事件：
+
+- Tool 名称和参数的稳定哈希；
+- Tool 结果的稳定指纹；
+- Agent Step 准入；
+- Tool 结果完成；
+- `agent/turn-stopping` 边界；
+- 取消和 Agent dispose。
+
+插件不读取、保存、输出或要求模型暴露隐藏思维链，也不会伪造“任务已完成”的总结。
+
+### 4. 和宿主 Token 能力协作
 
 - 不重复实现 `dsh-plugin-save-token` 的压缩、展开和原文恢复。
-- 不改写完整对话历史，不调用额外模型做总结。
-- PI-Desktop / DSH 没有公开 Token Saver / Prompt Cache 适配器时，插件安全降级，不伪称已经调用宿主服务。
-- 详细边界见 [宿主集成说明](docs/host-pi-desktop-integration.md)。
+- 不改写完整对话历史，不为了统计增加额外模型调用。
+- 不调用 PI-Desktop / DSH 私有字段。
+- 宿主没有公开 Token Saver / Prompt Cache 适配器时，安全降级并如实记录。
 
-## 目录怎么分
+## 环境与目录
+
+当前验证环境：
+
+- Node.js `v24.22.1`
+- pnpm `11.28.5`
+- DSH CLI `0.2.1-rc.5`
+- DSH peer 测试包 `0.2.1-rc.3`
+- Windows 环境全量测试通过
+
+目录职责：
 
 ```text
-src/       源码：能力目录、策略、Guard、客户端、Typert 网关
- tests/    Vitest 测试
- docs/     运行时审计、宿主集成、验收与交接材料
- assets/   README / UI 使用的静态资源
- lib/      构建生成物，不手改
- cordis.patch.yml  隔离 profile 的 DSH bundle patch
+src/       唯一源码：能力目录、策略、Guard、客户端、Typert 网关
+tests/     Vitest 测试
+docs/      运行时审计、宿主集成、验收报告
+assets/    README / UI 静态资源
+lib/       构建生成物，不手工修改
+cordis.patch.yml  隔离 profile 使用的 DSH bundle patch
+AGENTS.md  项目开发约束
+HANDOFF.md 下一次 Agent 交接文档
 ```
 
-`node_modules/`、测试缓存和临时打包文件不属于仓库内容；`.gitignore` 已排除。
+`node_modules/`、测试缓存、`.tgz` 和本机状态由 `.gitignore` 排除。
 
-## 怎么安装和使用
+## 安装与使用
 
-### 从源码安装到隔离 profile
+### 1. 安装依赖并构建
 
-先准备 Node.js、pnpm 和 DSH。当前本地验证过 Node.js `v24.22.1`、pnpm `11.28.5`、DSH `0.2.1-rc.5`，插件 peer 测试包为 DSH `0.2.1-rc.3`。
-
-在本目录运行：
+在仓库根目录执行：
 
 ```powershell
 pnpm install --frozen-lockfile
@@ -57,37 +115,37 @@ pnpm build
 npm pack --dry-run
 ```
 
-然后只在隔离的 DSH profile 中安装生成的本地包：
+### 2. 安装到隔离 DSH profile
+
+只建议先安装到 disposable / isolated profile：
 
 ```powershell
 dsh plugin --profile <isolated-profile> add .
 ```
 
-不要直接对正在使用的 `desktop` profile 做切换。生产切换前必须先复制 profile、备份 patch 和旧 Capability Menu 状态文件。
+不要直接切换正在使用的 `desktop` profile。切换前必须复制 profile，备份 Cordis patch、旧 Capability Menu 状态文件，并准备回滚路径。
 
-### 默认配置
+### 3. Agent 使用按需能力
 
-`cordis.patch.yml` 默认启用：
-
-- Guard：`normal`
-- 重复调用检测：开启
-- 重复调用硬拦截：关闭
-- 每 Turn 最多一次收敛 steer
-- 连续两次无进展后停止下一模型步骤
-
-常用配置入口是 root entry 的 `config.guard`。不要把 Guard 计数器做成全局单例；状态必须跟 Agent / Turn 绑定。
-
-### Agent 怎么用按需能力
-
-1. 先调用 `meta_search` 找能力。
-2. 对精确 `id + kind` 调用 `meta_search` 查看详情和参数 Schema。
+1. 用 `meta_search` 找到能力。
+2. 对精确 `id + kind` 再调用 `meta_search` 查看详情和参数 Schema。
 3. 用 `meta_invoke({ id, kind, args })` 执行 Tool 或加载 Skill。
 
-## 怎么验证插件结果
+### 4. 默认 Guard 配置
 
-### 本地自动化验证
+`cordis.patch.yml` 默认使用：
 
-在 `plugin` 目录运行：
+- Guard：`normal`；
+- 重复调用检测开启；
+- 重复调用默认只提醒，不硬拦截；
+- 每 Turn 最多一次收敛 steer；
+- 连续两次无进展后停止下一模型步骤。
+
+配置入口是 root entry 的 `config.guard`。计数状态不能改成全局单例，必须继续按 Agent / Turn 隔离。
+
+## 验证插件结果
+
+### 自动化验证
 
 ```powershell
 pnpm typecheck
@@ -96,12 +154,12 @@ pnpm build
 npm pack --dry-run
 ```
 
-当前已验证结果：
+当前已验证：
 
-- `pnpm typecheck`：通过
-- `pnpm test`：14 个测试文件、203 个测试全部通过
-- `pnpm build`：通过，生成客户端 bundle 和服务端 `lib/`
-- `npm pack --dry-run`：通过，包名为 `dsh-agent-efficiency-guard`
+- `pnpm typecheck`：通过；
+- `pnpm test`：14 个测试文件、203 个测试全部通过；
+- `pnpm build`：通过；
+- `npm pack --dry-run`：通过，包名 `dsh-agent-efficiency-guard`，版本 `0.1.7`。
 
 Guard 专项测试：
 
@@ -109,24 +167,56 @@ Guard 专项测试：
 pnpm exec vitest run tests/guard-core.spec.ts
 ```
 
-### 手工隔离 profile 验证
+### 隔离 profile 手工验证
 
-安装到隔离 profile 后，至少检查：
+安装后至少确认：
 
-- `meta_search`、`meta_invoke` 是否可用；
-- Resident / On-demand / Disabled 是否同时影响提示词可见性和实际执行；
-- `ctx.tools.guard()` 是否能阻止超出预算的下一次工具调用；
-- 重复工具调用是否只提醒、不默认误杀；
-- 连续无进展时是否停止新的模型步骤，且不伪造最终答案；
+- `meta_search`、`meta_invoke` 可用；
+- Resident / On-demand / Disabled 同时影响 Prompt 可见性和实际执行；
+- `ctx.tools.guard()` 能拒绝超出预算的下一次 Tool；
+- 重复 Tool 默认提醒而不是误杀；
+- 连续无进展会停止新的模型步骤，但不伪造最终答案；
 - Save Token 仍能压缩/展开，且没有重复注册；
-- MCP Connector Session 工具不能被 `meta_invoke` 绕过；
-- 设置页和 Typert 远程接口能加载。
+- MCP Connector Session Tool 不能被 `meta_invoke` 绕过；
+- 设置页和 Typert 远程接口可以加载。
 
-当前生产 `desktop` profile 尚未切换。完整边界见 [验收报告](docs/acceptance-report.md)。
+生产 `desktop` profile 尚未切换。详见 [验收报告](docs/acceptance-report.md)。
 
-## 如何删除本地目录
+## 贡献指南
 
-如果只是删除本地工作区副本，在确认不再需要构建产物后，从上一级目录执行：
+### 开发原则
+
+- 只改 `src/` 和对应的 `tests/`；不要手改 `lib/`。
+- 新行为必须补测试。
+- 修改 DSH Hook 前先核对本机 `@deepseek-ai/dsh-*` 类型定义。
+- 保持 Windows 路径兼容，测试临时目录使用 `tmpdir()`。
+- 不复制 Save Token 的压缩链，不调用宿主私有字段。
+- 不读取、保存或输出隐藏思维链。
+- 不在未验证的情况下声称支持某个 DSH 版本或生产 profile。
+
+### 提交前检查
+
+```powershell
+pnpm typecheck
+pnpm test
+pnpm build
+npm pack --dry-run
+git diff --check
+```
+
+提交说明应直接写明改了什么。涉及状态格式、公共 Typert ID、插件 entry ID 或生产 profile 时，应在 PR 中写迁移和回滚方案。
+
+### 提交贡献
+
+1. Fork 仓库并创建功能分支。
+2. 阅读 [AGENTS.md](AGENTS.md)、[HANDOFF.md](HANDOFF.md) 和 `docs/` 下的审计文档。
+3. 修改源码与测试。
+4. 运行完整检查并把实际结果写入 PR。
+5. 不提交 `node_modules/`、`lib/`、临时 `.tgz`、凭据、session 或本机 profile。
+
+## 删除与卸载
+
+只删除本地源码目录，在工作区上一级执行：
 
 ```powershell
 Remove-Item -LiteralPath ".\\plugin" -Recurse -Force
@@ -134,22 +224,22 @@ Remove-Item -LiteralPath ".\\plugin" -Recurse -Force
 
 这只删除当前工作区的 `plugin` 目录，不会卸载 DSH，也不会删除 `C:\Users\yansui\.dsh` 下的 profile、状态文件或已安装插件。
 
-如果已经安装到隔离 profile，先停 DSH，再按该 profile 的插件管理方式移除：
+如果已经安装到隔离 profile，先停 DSH，再执行：
 
 ```powershell
 dsh plugin --profile <isolated-profile> remove dsh-agent-efficiency-guard
 ```
 
-不要把删除本地源码目录当成生产卸载。生产卸载前要备份 patch、恢复旧 Capability Menu 状态，并验证旧工具和 Skills 已恢复。
+删除本地源码目录不等于生产卸载。生产卸载前要备份 patch、恢复旧 Capability Menu 状态，并验证旧 Tool 和 Skill 已恢复。
 
-## 文档入口
+## 许可证
+
+本项目使用 [Apache License 2.0](LICENSE)。
+
+## 相关文档
 
 - [项目约束](AGENTS.md)
 - [运行时审计](docs/runtime-audit.md)
 - [PI-Desktop 宿主集成](docs/host-pi-desktop-integration.md)
 - [验收报告](docs/acceptance-report.md)
-- 工作区交接：[../HANDOFF.md](../HANDOFF.md)
-
-## License
-- 工作区交接：[HANDOFF.md](HANDOFF.md)
-Apache License 2.0，见 [LICENSE](LICENSE)。
+- [HANDOFF 交接文档](HANDOFF.md)
