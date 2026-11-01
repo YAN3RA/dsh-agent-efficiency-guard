@@ -4,7 +4,7 @@
 
 ## 结论
 
-独立 DSH_HOME 的发布包安装、Web 冷启动、工具链、设置页、Typert 和卸载回退已取得证据。N8 已定位超长结果为宿主 `spill-policy` 的 12,500 Token 内联保留策略：Save Token 展开的是上游预览，完整原文仍在宿主 spill 文件中并已通过 SHA-256 校验；隔离上限放宽后同一大样本也可全量展开。真实 Electron renderer 与外部 MCP Session 授权未覆盖，因此不能标记为完整生产兼容性验收通过。
+独立 DSH_HOME 的发布包安装、Web 冷启动、工具链、设置页、Typert 和卸载回退已取得证据。N8 已定位超长结果为宿主 `spill-policy` 的 12,500 Token 内联保留策略：Save Token 展开的是上游预览，完整原文仍在宿主 spill 文件中并已通过 SHA-256 校验；隔离上限放宽后同一大样本也可全量展开。N9 的真实 Electron renderer、本地 stdio MCP 连接和 Agent Session 授权链均已在隔离环境验收，13 项授权断言全部通过。未调用模型、未修改生产 profile；N10 的 npm/tag/push 仍需单独授权，不能据此宣称发布完成或完整生产兼容性验收通过。
 
 ## 环境与隔离边界
 
@@ -42,7 +42,7 @@
 
 1. **超长结果已定位（N8 完成）**：默认宿主上限 `maxInlineTokens: 12500` 下，174,389 字符输入展开为 49,933 字符的上游预览，宿主定位器文件仍完整且 SHA-256 相同。49,984/49,985 边界对照成立；仅将隔离上限改为 200,000 后，同一输入的展开值、展示文本和 Save Token 文件全部精确恢复。默认“展开即最初原文”的假设仍不成立，应沿预览内宿主定位器分段读取；详见 [N8 诊断](n8-diagnosis.md) 和 [证据](evidence/n8-results.json)。未修改生产配置或 Guard 逻辑。
 2. **热重载归属已定位（N11 完成）**：冷启动、隔离 profile patch reload、隔离 package manager 变更均无页面/服务错误，但公开 Web CLI 未触发 Electron Client Modules 的 `rebuilt` 替换帧。源码证据表明 `session-maybe` 异常来自宿主 Client Modules 串行 teardown 窗口；Connector 的 `layout` 异常来自其卸载路径缺少 `layout` Cordis inject/不安全 fallback。官方规避是安装/配置变更后冷重启或刷新页面；Connector 修复需上游处理。详见 [N11 诊断](n11-diagnosis.md) 和 [证据](evidence/n11-results.json)。
-3. **真实 Electron renderer 已验证，MCP Session 授权未覆盖（N9 partial）**：独立 `DSH_HOME`、独立 Electron userData 和最终 tarball 启动成功；真实页面为 `dsh-app://app/`，MCP Connector client apply 日志出现，renderer DOM 可见 `MCP连接器`，`capabilityPolicy/getConfig`、`catalogVersion`、`getCatalogDocs` 均 HTTP 200 且业务成功。没有模型请求，也没有配置外部 MCP 测试连接；真实 MCP Session 授权仍未执行。CDP 截图收尾未完成，但 DOM/RPC 证据已保存。详见 [N9 证据](evidence/n9-results.json)。N10 release gate 仍阻塞。
+3. **N9 已通过隔离授权验收**：独立 `DSH_HOME`、Electron userData 和最终 tarball 环境下，真实 renderer 与此前保存的 1920×1233 CDP 截图证据保留；本次本地 synthetic stdio server 健康并注册 `n9_echo`，`injectionMode=session` 生效。13 项真实 Agent 断言全部通过：未授权直接和 `meta_invoke` 调用拒绝，search/preview/activation 正常，授权后的直接和 meta 调用均抵达 MCP server，另一 Agent 被隔离，deactivate 后两种调用再次拒绝；server marker 精确只有两条授权调用。没有 fatal 或 cleanup error；连接断开、剩余连接为 0、patch 恢复空列表，隔离 Electron/Host 已停止。未调用模型、未触碰生产 profile。详见 [N9 证据](evidence/n9-results.json) 与 [renderer 截图](evidence/n9-electron-renderer.png)。
 4. **宿主 Token/Cache 接口**：仍未接入任何私有 Token Saver / Prompt Cache API；安全降级与职责边界保持不变。
 
 ## 生产现场与 N4
@@ -59,7 +59,7 @@
 - `pnpm bridge` 是源码开发辅助脚本，未打包；不把它列为安装后的运行依赖。正常 tarball 在宿主的公开模块解析机制下完成了运行验证。
 - release job 只创建 GitHub Release，不发布 npm。annotated tag 必须恰好为 `v0.1.7`，说明非空且不能只有 `Release v0.1.7`。
 - 发布说明候选见 [release-notes.md](release-notes.md)。材料已提交为 `bc3604b`；本轮没有创建 tag、发布 npm 或推送。
-- N9 真实 Electron 验收尚未完成，故本候选不能进入 N10 的 tag/npm/push release gate。
+- N9 真实 Electron Agent Session 授权验收已完成，13 项断言通过；其余发布准备完成后，N10 的 npm/tag/push 仍须另行明确授权。
 
 完成剩余验收、审核本地改动并提交后，才可在明确授权下发布和推送标签。计划中的命令如下，本轮未执行：
 

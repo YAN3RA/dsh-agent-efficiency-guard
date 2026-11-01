@@ -2,10 +2,9 @@
 
 更新：2026-11-01。唯一待办清单；HANDOFF 引用本文件，不另维护一组编号。
 
-N1、N6、N7 的 Git 核对/获取/快进已完成。N2 隔离安装、N3 隔离验证/回滚、N4 生产方案、N5 发布材料与本地打包检查已完成。N8 已定位宿主 `spill-policy` 预览先于 Save Token 缓存，N11 已定位热重载异常归属，N9 已完成真实 Electron renderer 的部分验证但外部 MCP Session 授权未覆盖；见 N8/N11 诊断和 N9 证据。本轮未发布或改生产配置。
+N1–N9 已完成，包括 N9 独立 Electron/MCP Agent Session 授权链 13/13 断言通过。N10 仅剩外部发布动作，尚未授权或执行。生产配置未修改。
+1. **N10 ·【推荐先做】审核并执行首次发布**：复核候选版本、最终提交与 registry 状态；经用户明确授权后发布 tarball、创建 annotated `v0.1.7`、推送 main/tag，并检查 CI/Release 结果。成本：本地准备约 10–20 分钟加发布与 CI 等待；建议：N9 已通过，但 npm/tag/push 是外部动作，仍须单独明确授权后才能执行。
 
-2. **N9 ·【推荐先做】补充真实 MCP Session/授权验收**：在独立 Electron profile 中配置一个本地测试 MCP server，验证连接、按会话注入、`meta_invoke` 不绕过授权及冷退出回滚；成本：约 20–40 分钟；建议：不调用模型，需先确定本地测试 server 方案。
-3. **N10 · 审核并执行首次发布**：N9 的 MCP 授权和 renderer 截图证据补齐或用户明确接受限制后，复核候选版本并提交；得到外部动作授权后发布 tarball、创建 annotated `v0.1.7`、推送 main/tag；成本：约 10–20 分钟加 CI 等待；建议：当前 release gate 仍阻塞，不创建 tag、不发布、不推送。
 
 ## 关键证据与现场
 
@@ -17,4 +16,4 @@ N1、N6、N7 的 Git 核对/获取/快进已完成。N2 隔离安装、N3 隔离
 - scratch 内保留本轮脚本/原始日志/测试 home/临时 tgz；其生命周期随会话结束，长期结论以本目录文件为准，不把 scratch 当跨会话存储。
 - N8 新证据：`evidence/n8-results.json`，默认 cap 12,500 下完整宿主文件哈希匹配；隔离 cap 200,000 下 174,389 字符全量展开通过。旧 `evidence/results.json` 保留历史失败，不视为当前未定位故障。
 - N11 新证据：`evidence/n11-results.json`；N11 诊断：`n11-diagnosis.md`。隔离 profile 已卸载三包、恢复空 patch、停止宿主；真实 Electron `rebuilt` 帧仍未覆盖。
-- N9 证据：`evidence/n9-results.json`，状态为 blocked；N10 的 release actions 尚未执行。
+- N9 证据：`evidence/n9-results.json`，13/13 Agent 授权断言通过；真实 MCP marker 精确两条授权调用，隔离资源已清理。N10 外部发布动作尚未执行且仍需明确授权。

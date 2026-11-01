@@ -9,6 +9,6 @@
 
 Windows 类型检查、203 项单测和构建通过；DSH 0.2.1-rc.5 的隔离 tarball 安装、Web 冷启动、设置页、Typert 与卸载回退已有证据。
 
-已知限制：默认宿主 `spill-policy` 会先生成超长结果的内联预览，Save Token 展开可能只恢复这份预览；N8 已验证预览内宿主定位器保存完整原文，且隔离放宽上限后同一 174,389 字符样本可精确恢复。不宣称任意长度均可全量内联。N11 已定位热重载异常归属：宿主 Client Modules 的串行替换窗口与 Connector 自身缺少 `layout` inject；公开 Web CLI 对照未触发 Electron `rebuilt` 帧，支持的规避是变更后冷重启/刷新。N9 已验证独立真实 Electron renderer、MCP Connector client 加载和只读 capabilityPolicy RPC，未配置真实外部 MCP Session 授权，CDP 截图收尾未完成；N10 release actions 尚未执行。
+已知限制：默认宿主 `spill-policy` 会先生成超长结果的内联预览，Save Token 展开可能只恢复这份预览；N8 已验证预览内宿主定位器保存完整原文，且隔离放宽上限后同一 174,389 字符样本可精确恢复。不宣称任意长度均可全量内联。N11 已定位热重载异常归属：宿主 Client Modules 的串行替换窗口与 Connector 自身缺少 `layout` inject；公开 Web CLI 对照未触发 Electron `rebuilt` 帧，支持的规避是变更后冷重启/刷新。N9 已验证独立真实 Electron renderer、本地无凭据 stdio MCP 初始化与 `n9_echo` 工具同步、`injectionMode=session` 设置及 Agent Session 授权链；13 项断言全部通过，包含未授权/跨 Agent/停用后拒绝、授权后直接调用和 `meta_invoke` 成功，以及服务端 marker 精确记录两次授权调用。N10 npm/tag/push 状态以本次发布核验结果为准。
 
 本说明是待审核的发布材料；npm 发布、生产配置变更与远端标签推送未在准备阶段执行。
