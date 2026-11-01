@@ -1,5 +1,10 @@
 # dsh-agent-efficiency-guard
 
+
+<p align="center">
+  <strong>把能力目录、按需调用、预算守卫和可观察的死循环防护放进一个 DSH 插件。</strong>
+</p>
+
 <p align="center">
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/DeepSeek%20Harness-0.2.1--rc.5-4D6BFE?style=flat-square&labelColor=161b22&logo=deepseek&logoColor=white" alt="DeepSeek Harness 0.2.1-rc.5" /></a>
   <a href="./package.json"><img src="https://img.shields.io/badge/package-v0.1.7-CB3837?style=flat-square&labelColor=161b22&logo=npm&logoColor=white" alt="package version 0.1.7" /></a>
@@ -7,10 +12,6 @@
   <a href="./docs/acceptance-report.md"><img src="https://img.shields.io/badge/tests-203%20passed-208B3A?style=flat-square&labelColor=161b22&logo=vitest&logoColor=white" alt="203 tests passed" /></a>
   <a href="https://github.com/YAN3RA/dsh-agent-efficiency-guard/stargazers"><img src="https://img.shields.io/github/stars/YAN3RA/dsh-agent-efficiency-guard?style=flat-square&color=dbab09&labelColor=161b22&logo=github&logoColor=white" alt="GitHub stars" /></a>
   <a href="https://github.com/YAN3RA/dsh-agent-efficiency-guard"><img src="https://img.shields.io/badge/npm-not%20published-6c757d?style=flat-square&labelColor=161b22&logo=npm&logoColor=white" alt="npm not published" /></a>
-</p>
-
-<p align="center">
-  <strong>把能力目录、按需调用、预算守卫和可观察的死循环防护放进一个 DSH 插件。</strong>
 </p>
 
 > 这是一个已完成本地构建和 Windows 测试的实现阶段版本。当前没有切换生产 `desktop` profile，也没有发布 npm 包；真实桌面启动验证需要在隔离 DSH profile 中继续完成。
