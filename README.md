@@ -237,10 +237,3 @@ dsh plugin --profile <isolated-profile> remove dsh-agent-efficiency-guard
 
 本项目使用 [Apache License 2.0](LICENSE)。
 
-## 相关文档
-
-- [项目约束](AGENTS.md)
-- [运行时审计](docs/runtime-audit.md)
-- [PI-Desktop 宿主集成](docs/host-pi-desktop-integration.md)
-- [验收报告](docs/acceptance-report.md)
-- [HANDOFF 交接文档](HANDOFF.md)
