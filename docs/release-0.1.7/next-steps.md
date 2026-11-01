@@ -2,10 +2,10 @@
 
 更新：2026-11-01。唯一待办清单；HANDOFF 引用本文件，不另维护一组编号。
 
-N1、N6、N7 的 Git 核对/获取/快进已完成。N2 隔离安装、N3 隔离验证/回滚、N4 生产方案、N5 发布材料与本地打包检查已完成。N8 已定位宿主 `spill-policy` 预览先于 Save Token 缓存，N11 已定位热重载异常归属，N9 已尝试但被 Electron 单实例锁/CDP 缺失阻塞；见 N8/N11 诊断和 N9 证据。材料已提交为 `bc3604b`，本轮未发布或改生产配置。
+N1、N6、N7 的 Git 核对/获取/快进已完成。N2 隔离安装、N3 隔离验证/回滚、N4 生产方案、N5 发布材料与本地打包检查已完成。N8 已定位宿主 `spill-policy` 预览先于 Save Token 缓存，N11 已定位热重载异常归属，N9 已完成真实 Electron renderer 的部分验证但外部 MCP Session 授权未覆盖；见 N8/N11 诊断和 N9 证据。本轮未发布或改生产配置。
 
-2. **N9 ·【推荐先做】完成真实 Electron 与 MCP Session 验收**：用户关闭当前 DeepSeek Harness 实例后，用独立 DSH_HOME/userData 重新启动真实 Electron，取得 renderer 检查路径，验证设置页、实际会话和测试 MCP 授权隔离；成本：约 30–60 分钟，实际模型调用可能产生用量；建议：解除单实例和 CDP 阻塞前不发布。
-3. **N10 · 审核改动、提交并执行首次发布**：N9 通过或用户明确接受其阻塞后，复核候选版本并提交；得到外部动作授权后发布 tarball、创建 annotated `v0.1.7`、推送 main/tag；成本：约 10–20 分钟加 CI 等待；建议：当前 release gate 仍阻塞，不创建 tag、不发布、不推送。
+2. **N9 ·【推荐先做】补充真实 MCP Session/授权验收**：在独立 Electron profile 中配置一个本地测试 MCP server，验证连接、按会话注入、`meta_invoke` 不绕过授权及冷退出回滚；成本：约 20–40 分钟；建议：不调用模型，需先确定本地测试 server 方案。
+3. **N10 · 审核并执行首次发布**：N9 的 MCP 授权和 renderer 截图证据补齐或用户明确接受限制后，复核候选版本并提交；得到外部动作授权后发布 tarball、创建 annotated `v0.1.7`、推送 main/tag；成本：约 10–20 分钟加 CI 等待；建议：当前 release gate 仍阻塞，不创建 tag、不发布、不推送。
 
 ## 关键证据与现场
 

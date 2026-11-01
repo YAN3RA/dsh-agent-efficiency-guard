@@ -1,12 +1,12 @@
 # dsh-agent-efficiency-guard — HANDOFF
 
-更新：2026-11-01。本文件保留接手所需现场；唯一待办清单见 [next-steps.md](docs/release-0.1.7/next-steps.md)。
+更新：2026-11-01（暂停点）。本文件保留接手所需现场；唯一待办清单见 [next-steps.md](docs/release-0.1.7/next-steps.md)。
 
 ## 目标与边界
 
 把 Capability Menu 的能力目录、按需调用、三档策略与 Agent Efficiency Guard 合并为一个可独立安装的 DSH 插件。
 
-本轮执行 N7 → N2 → N3 → N4 → N5：快进同步、隔离 tarball 安装、集成/回滚验证、生产方案和发布准备。没有发布 npm、创建 tag、Git 提交/推送或修改生产配置，也没有重启现用 Electron。
+已完成 N7、N2、N3、N4、N5、N8、N11，N9 做到部分验证，N10 只完成本地检查与文档提交。**未发布 npm、未创建 tag、未推送远端。** 为解除 Electron 单实例锁，用户授权关闭了当时运行的生产桌面；生产 profile 文件未被修改，但桌面进程当前为 0，需要用户自行重启。
 
 真实 Electron renderer、实际模型回合、外部 MCP Session 授权与专门 Guard 统计面板未在本轮实施；不接入私有 Token Saver / Prompt Cache API。
 
@@ -29,14 +29,22 @@
 - N5：保留首个候选 `0.1.7`；删除未打包 `./src/*` 导出，修正 README 的安装方式和 npm 文档链接，更新验收与发布说明。
 - 本地 `pnpm typecheck`、全量 14 文件/203 测试、`pnpm build`、`npm pack --dry-run` 均通过；最终包所有 14 个 export 目标存在，60 个运行时文件与实测安装包逐字节一致。
 - 最终包 201,340 bytes、63 files；SHA-256 `9afcb5c6d164e81fde217971e46ff836895169ca747bfa126196957fda050003`。包位置只在当前 session scratch，长期元数据保存在证据目录。
-- 本轮材料已提交为 `bc3604b`；未创建 tag、未发布 npm、未推送。当前候选不能声明完整生产兼容性通过。
+- 材料提交：`bc3604b`（隔离验证与发布门禁）、`9bed196`（Electron 阻塞记录），以及本轮 N9 partial 修正提交；未创建 tag、未发布 npm、未推送。当前候选不能声明完整生产兼容性通过。
 
+
+## 暂停点（2026-11-01）
+
+- **生产桌面已关闭，需用户重启。** 关闭前为解锁隔离 Electron 单实例，已获用户授权；`C:\Users\yansui\.dsh\profiles\desktop` 未被写入或切换。重启方式：正常启动 DeepSeek Harness 即可，profile 仍是原 source link + bundle。
+- **Git**：`main` 比 `origin/main` 超前 3 个提交（含本轮 N9 文档提交），工作区应保持干净；没有 `v0.1.7` tag。
+- **隔离资源已回滚**：`n9` scratch profile 已卸载三个测试包、patch 重置为 `[]`、隔离 Electron 与 Host 进程均已停止。生产进程未被本次回滚触碰（本就已关闭）。
+- **N9 停在哪**：真实 Electron renderer 与只读 `capabilityPolicy` RPC 已验证；外部 MCP Session/授权未配置、未执行，CDP 截图收尾未完成。这是 N10 的唯一实质门禁。
+- **继续方式**：按 `next-steps.md` 的 N9（本地测试 MCP server）→ N10（复核、tag、npm、push）顺序推进；N10 的外部动作需要用户重新明确授权。
 ## 真正的遗留与限制
 
 - N8 已完成：宿主默认 `spill-policy.maxInlineTokens: 12500` 先生成约 49.93k 的头尾预览，Save Token 再缓存预览。默认新实验中 174,389 → 展开 49,933，但宿主定位器文件完整且 SHA-256 匹配；49,984/49,985 边界成立，隔离改为 200,000 Token 后同一输入的展开值/展示文本/文件全部精确恢复。不改 Guard 或生产配置；详情见 `docs/release-0.1.7/n8-diagnosis.md`。
 - 首轮完整 runtime 断言 10 通过、1 失败；之后只重跑 Save Token 小样本并通过，不是原始 11 项全通过。
 - N11 已完成：冷启动、隔离 patch reload 与隔离 package-manager 变更均 0 页面/服务异常；公开 Web CLI 未触发 Electron `rebuilt` 帧。源码归属已确认：`session-maybe` 是宿主 Client Modules 串行 teardown 窗口，Connector `layout` 是其客户端缺少 Cordis inject/卸载 fallback 问题。规避为变更后冷重启/刷新；第三方修复不上游不改本仓库。详情见 `docs/release-0.1.7/n11-diagnosis.md`。
-- N9 blocked：现有用户 Electron 实例持有单实例锁；打包应用没有可用 CDP 端点，独立 DSH_HOME 未创建 desktop profile。当前生产 manifest 已含本插件 source link/bundle，但不等同真实 renderer 验收。N10 的 tag/npm/push release gate 因此仍阻塞；证据见 `docs/release-0.1.7/evidence/n9-results.json`。
+- N9 partial：已在独立 DSH_HOME/userData 中启动真实 Electron，`dsh-app://app/` renderer 加载成功；MCP Connector client 日志出现，`capabilityPolicy/getConfig/catalogVersion/getCatalogDocs` 只读 RPC 业务成功，零模型请求。没有外部 MCP 测试连接，真实 Session 授权未覆盖；CDP 截图收尾未完成。N10 release gate 仍阻塞；证据见 `docs/release-0.1.7/evidence/n9-results.json`。
 - 生产 manifest 在本轮开始时已经含本插件的源码 link 与 bundle；旧 Capability Menu 仅在 dependencies，不在 bundle 列表。本轮未写生产配置，但构建更新了源码 link 的 `lib/` 目标，不可把源码链接当固定部署。
 - 当前没有已验证的公开宿主 Token Saver/Prompt Cache 适配器，继续安全降级。
 

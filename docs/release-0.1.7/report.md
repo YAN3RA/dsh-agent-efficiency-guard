@@ -42,7 +42,7 @@
 
 1. **超长结果已定位（N8 完成）**：默认宿主上限 `maxInlineTokens: 12500` 下，174,389 字符输入展开为 49,933 字符的上游预览，宿主定位器文件仍完整且 SHA-256 相同。49,984/49,985 边界对照成立；仅将隔离上限改为 200,000 后，同一输入的展开值、展示文本和 Save Token 文件全部精确恢复。默认“展开即最初原文”的假设仍不成立，应沿预览内宿主定位器分段读取；详见 [N8 诊断](n8-diagnosis.md) 和 [证据](evidence/n8-results.json)。未修改生产配置或 Guard 逻辑。
 2. **热重载归属已定位（N11 完成）**：冷启动、隔离 profile patch reload、隔离 package manager 变更均无页面/服务错误，但公开 Web CLI 未触发 Electron Client Modules 的 `rebuilt` 替换帧。源码证据表明 `session-maybe` 异常来自宿主 Client Modules 串行 teardown 窗口；Connector 的 `layout` 异常来自其卸载路径缺少 `layout` Cordis inject/不安全 fallback。官方规避是安装/配置变更后冷重启或刷新页面；Connector 修复需上游处理。详见 [N11 诊断](n11-diagnosis.md) 和 [证据](evidence/n11-results.json)。
-3. **真实 Electron 与 MCP 授权未覆盖（N9 blocked）**：现有用户 Electron 实例持有单实例锁；打包应用未提供可用 CDP 端点，独立 `DSH_HOME` 启动没有创建隔离 desktop profile。当前生产 manifest 已包含本插件 source link/bundle，但不能用它代替隔离 renderer 验收。详见 [N9 证据](evidence/n9-results.json)。
+3. **真实 Electron renderer 已验证，MCP Session 授权未覆盖（N9 partial）**：独立 `DSH_HOME`、独立 Electron userData 和最终 tarball 启动成功；真实页面为 `dsh-app://app/`，MCP Connector client apply 日志出现，renderer DOM 可见 `MCP连接器`，`capabilityPolicy/getConfig`、`catalogVersion`、`getCatalogDocs` 均 HTTP 200 且业务成功。没有模型请求，也没有配置外部 MCP 测试连接；真实 MCP Session 授权仍未执行。CDP 截图收尾未完成，但 DOM/RPC 证据已保存。详见 [N9 证据](evidence/n9-results.json)。N10 release gate 仍阻塞。
 4. **宿主 Token/Cache 接口**：仍未接入任何私有 Token Saver / Prompt Cache API；安全降级与职责边界保持不变。
 
 ## 生产现场与 N4

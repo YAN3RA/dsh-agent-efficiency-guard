@@ -1,30 +1,47 @@
 {
   "task": "N9",
   "date": "2026-11-01",
-  "status": "blocked",
+  "status": "partial",
   "runtime": "DSH Desktop 0.2.1-rc.5 / Electron 44.7.0",
+  "environment": "independent scratch DSH_HOME, independent Electron userData, packaged final 0.1.7 tarball",
   "modelRequests": 0,
-  "verified": {
-    "currentElectronHost": true,
-    "currentHostProcessCommand": "@deepseek-ai/dsh-desktop-host/lib/index.js loads C:/Users/yansui/.dsh/profiles/desktop",
-    "currentProductionManifestHasPluginDependency": true,
-    "currentProductionManifestHasPluginBundle": true,
-    "currentHostLocalListener": "127.0.0.1:3082",
-    "currentHostRootExternalRequest": "not-found without renderer authentication",
-    "cdpEndpoint": false,
-    "isolatedElectronProfileCreated": false
+  "renderer": {
+    "electronProcessStarted": true,
+    "profileCreated": true,
+    "cdpPort": 9250,
+    "targetUrl": "dsh-app://app/",
+    "pageBodyContains": [
+      "MCP连接器",
+      "能力菜单入口通过 settings/remote surface 可用",
+      "默认工作区",
+      "请选择模型"
+    ],
+    "mcpConnectorClientLogs": [
+      "[mcp-connector] client apply() called",
+      "[mcp-connector] registering shell.overlay slot",
+      "[mcp-connector] client apply() completed"
+    ],
+    "capturedRendererErrors": 0,
+    "screenshotCaptured": false,
+    "screenshotLimitation": "The renderer target closed or became unavailable during CDP screenshot cleanup after RPC results were written; DOM/RPC evidence was preserved."
   },
+  "rpc": {
+    "capabilityPolicy/getConfig": {"httpStatus":200,"ok":true},
+    "capabilityPolicy/catalogVersion": {"httpStatus":200,"ok":true,"value":46},
+    "capabilityPolicy/getCatalogDocs": {"httpStatus":200,"ok":true,"summaryMaxChars":320,"onDemandCount":0}
+  },
+  "mcp": {
+    "connectorClientLoaded": true,
+    "connectorUiVisible": true,
+    "externalConnectionConfigured": false,
+    "realSessionAuthorization": "not_run",
+    "reason": "No test MCP server/connection was configured; no external MCP call was made. Synthetic Scope/Session authorization remains covered by N3 evidence."
+  },
+  "productionChanged": false,
+  "releaseGate": "blocked",
   "blockers": [
-    "An existing user-owned DeepSeek Harness Electron instance holds the single-instance lock.",
-    "Launching the packaged Electron with an independent DSH_HOME did not create the scratch desktop profile; the app exited/forwarded under the existing single-instance owner.",
-    "The packaged app exposes no configured CDP/remote-debugging endpoint; common CDP ports and the Host HTTP port do not provide an authenticated renderer session.",
-    "The current desktop renderer cannot be inspected safely without taking over or closing the user's active Electron instance."
-  ],
-  "notClaimed": [
-    "No real renderer settings-page interaction was claimed.",
-    "No real model turn or external MCP Session authorization was performed.",
-    "No production profile was changed, restarted, or used for destructive testing."
-  ],
-  "requiredToContinue": "User closes the active DeepSeek Harness instance, then a fresh packaged Electron launch with independent DSH_HOME/userData and a supported renderer inspection path must be verified before release.",
-  "n10ReleaseBlocked": true
+    "Real external MCP Session authorization was not exercised.",
+    "The authenticated renderer screenshot cleanup did not complete, although page DOM text and RPC results were saved.",
+    "N10 tag/npm/push actions remain blocked until the user accepts these limits or provides a test MCP connection and permits the remaining renderer evidence."
+  ]
 }
