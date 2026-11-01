@@ -1,0 +1,108 @@
+# dsh-capability-menu aggregate bundle patch: mounts the meta plugins in one
+# layer, from a single installable package.
+#
+# One package, five plugin entries — four mount a subpath of
+# `dsh-agent-efficiency-guard` (the loader resolves package subpath exports; see
+# `@deepseek-ai/dsh-web-app/startup` for the same pattern in the harness), and
+# the root entry loads the package main to mount the browser-facing gateway
+# (and thereby registers the package itself as a `dsh.client` loader entry):
+#
+#   - id: capability-menu-registry
+#     name: 'dsh-agent-efficiency-guard/registry'
+#   - id: capability-menu-search
+#     name: 'dsh-agent-efficiency-guard/search'
+#   - id: capability-menu-invoke
+#     name: 'dsh-agent-efficiency-guard/invoke'
+#   - id: capability-menu-policy
+#     name: 'dsh-agent-efficiency-guard/policy'
+#       config:
+#         # Rule syntax — tier keys `resident` / `on-demand` / `disabled`
+#         # (exact names, `*` globs, or `server:<name>:*`), plus `metaTools` —
+#         # and the priority order are documented in the README「配置」
+#         # section; the shipped defaults live in the insert block below.
+#
+# - `capability-menu-registry` (P0): builds/indexes the capability catalog and
+#   exposes the `ctx.capability` service (search/get/getDetail/refresh). It registers
+#   no model-facing tool itself. Indexes every visible tool — MCP tools by their
+#   server and harness-native tools (bash/read/write/…) under the reserved
+#   `built-in` pseudo-server — plus skills from the global layer and every
+#   mountable preset's standing scope. `meta_search` searches this live index.
+# - `capability-menu-search` (P1): registers the `meta_search` tool (list + detail).
+# - `capability-menu-invoke` (P2): registers the `meta_invoke` tool (unified
+#   execution of tools — MCP or native — and skill loading). Executes in the
+#   caller's agent view so On-demand tools stay runnable without bypassing scope
+#   restrictions; dedups already-loaded skills. Rejects Disabled capabilities.
+# - `capability-menu-policy` (P3): Resident/On-demand/Disabled projection
+#   strategy + 能力菜单 surface. Reads explicit resident/on-demand/disabled
+#   rules (exact name + glob + server:<name>:*) and filters `assembly.tools` and
+#   web guidance sections at `system-prompt/assemble`. The execution chain
+#   (`ctx.tools.execute`) is untouched, so On-demand capabilities remain executable
+#   via `meta_invoke`. Exposes `ctx.capabilityPolicy` to the 能力菜单 tab through
+#   the Typert gateway: the tier surface (`classifyAll`/`getConfig`/
+#   `updateConfig`), the registered-location surface (`listLocations`/`addLocation`/
+#   `updateLocation`/`removeLocation` and `listSkillLocations`/`addSkillLocation`/
+#   `updateSkillLocation`/`removeSkillLocation`/`adoptSkillLocation`), the
+#   read-only rules and search summaries (`getCatalogDocs`), a rebuild trigger (`refresh`), and
+#   skill browsing (`getDetail`/`listSkillDir`/`readSkillFile`). Tier clicks land
+#   in the plugin's state file after `persistDebounceMs`; search settings share
+#   that file. Registered MCP servers land in `patchFile`, and skill directories
+#   live under `skillsDir`.
+#
+# Default (policy present but no config): every capability is Resident — the
+# `classify` fallback, nothing is hidden. Add explicit `on-demand`/`disabled`
+# rules to pull capabilities out of the model surface.
+# The web surface disables the host skill filesystem provider by default, but
+# this plugin's global Skill registration writes to its standard ~/.dsh/skills
+# root. Re-enable the native provider so registered skills are indexed and
+# available through ctx.skills; no upstream source or skill implementation is
+# replaced.
+- id: skill-filesystem
+  disabled: false
+- insert:
+    - id: capability-menu-registry
+      name: 'dsh-agent-efficiency-guard/registry'
+    - id: capability-menu-search
+      name: 'dsh-agent-efficiency-guard/search'
+    - id: capability-menu-invoke
+      name: 'dsh-agent-efficiency-guard/invoke'
+    - id: capability-menu-policy
+      name: 'dsh-agent-efficiency-guard/policy'
+      config:
+        # Native coding tools are cataloged under the reserved `built-in`
+        # pseudo-server and are fully manageable like MCP tools. Unlisted
+        # capabilities default to Resident; list them under `on-demand`/
+        # `disabled` to pull MCP servers, native tools, or skills out of the
+        # model surface. On-demand native tools stay invocable through
+        # `meta_search` → `meta_invoke`. The `meta_search`/`meta_invoke`
+        # control-plane tools and the reserved `run_code` transport never enter
+        # the catalog. Do not name a real MCP server `built-in`.
+        tools:
+          resident:
+            - bash
+            - read
+            - write
+            - edit
+            - read_image
+            - glob
+            - grep
+    # Root entry: loads the package main, which mounts the Typert gateway that
+    # exposes ctx.capabilityPolicy to the browser. Makes this package a loader
+    # entry itself so @deepseek-ai/dsh-client-modules discovers its `dsh.client`
+    # declaration and serves the 能力菜单 browser bundle (`./client`).
+    - id: agent-efficiency-guard
+      name: 'dsh-agent-efficiency-guard'
+      config:
+        guard:
+          enabled: true
+          profile: normal
+          duplicateDetection: true
+          duplicateWarnAfter: 2
+          duplicateHardBlock: false
+          hostIntegration:
+            enabled: true
+            provider: pi-desktop
+            preferHostTokenSaver: true
+            preferHostPromptCache: true
+            maxConvergenceSteersPerTurn: 1
+            maxNoProgressCycles: 2
+            loopBreakMode: stop-next-step

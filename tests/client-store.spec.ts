@@ -1,0 +1,100 @@
+import { describe, expect, it, vi } from 'vitest'
+import {
+  loadSnapshot,
+  readSnapshot,
+  waitForMcpTools,
+  withTransientRetry,
+  type CapabilityPolicyRemote,
+  type CapabilityRow,
+} from '../src/client/store.ts'
+
+function remoteWithRows(...responses: CapabilityRow[][]): CapabilityPolicyRemote {
+  let index = 0
+  return {
+    classifyAll: vi.fn(async () => ({
+      ok: true as const,
+      value: responses[Math.min(index++, responses.length - 1)] ?? [],
+    })),
+  } as unknown as CapabilityPolicyRemote
+}
+
+const githubTool = { id: 'mcp__github__search_repositories', kind: 'tool' } as CapabilityRow
+const nativeTool = { id: 'execute_cmd', kind: 'tool' } as CapabilityRow
+
+describe('client capability snapshots', () => {
+  it('retries an empty first snapshot so late-registered built-ins appear', async () => {
+    const remote = remoteWithRows([], [nativeTool])
+
+    const snapshot = await loadSnapshot(remote, [0])
+
+    expect(snapshot.rows).toEqual([nativeTool])
+    expect(remote.classifyAll).toHaveBeenCalledTimes(2)
+  })
+
+  it('waits for a newly registered MCP server to expose its tools', async () => {
+    const remote = remoteWithRows([nativeTool], [nativeTool, githubTool])
+
+    const snapshot = await waitForMcpTools(remote, 'github', [0])
+
+    expect(snapshot?.rows).toEqual([nativeTool, githubTool])
+    expect(remote.classifyAll).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports when the registered MCP server has no indexed tools before timeout', async () => {
+    const remote = remoteWithRows([nativeTool])
+
+    await expect(waitForMcpTools(remote, 'github', [0])).resolves.toBeUndefined()
+    await expect(readSnapshot(remote)).resolves.toMatchObject({ rows: [nativeTool] })
+  })
+
+  it('rides through a reload caused by an MCP patch edit', async () => {
+    let attempts = 0
+    const remote = {
+      classifyAll: vi.fn(async () => {
+        attempts += 1
+        if (attempts === 1) {
+          throw new Error('capabilityPolicy.classifyAll failed: gateway/service-unavailable: typert gateway: capabilityPolicy/classifyAll: active Service "capabilityPolicyGateway" is unavailable')
+        }
+        return { ok: true as const, value: [nativeTool] }
+      }),
+    } as unknown as CapabilityPolicyRemote
+
+    const snapshot = await loadSnapshot(remote, [])
+
+    expect(snapshot.rows).toEqual([nativeTool])
+    expect(remote.classifyAll).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries only the failures a reload explains', async () => {
+    const transient = vi.fn()
+      .mockRejectedValueOnce(new Error('capabilityPolicy.getConfig failed: gateway/service-unavailable: unavailable'))
+      .mockResolvedValueOnce('ok')
+
+    await expect(withTransientRetry(transient, [0, 0])).resolves.toBe('ok')
+    expect(transient).toHaveBeenCalledTimes(2)
+
+    const rejectedWrite = vi.fn(async () => {
+      throw new Error('capabilityPolicy.updateConfig failed: bad-request: tools.disabled is malformed')
+    })
+
+    await expect(withTransientRetry(rejectedWrite, [0, 0])).rejects.toThrow(/bad-request/)
+    expect(rejectedWrite).toHaveBeenCalledTimes(1)
+
+    const missingEndpoint = vi.fn(async () => {
+      throw new Error('transport failure for /api/capabilityPolicy/getConfig: HTTP 404')
+    })
+    await expect(withTransientRetry(missingEndpoint, [0, 0])).rejects.toThrow(/HTTP 404/)
+    expect(missingEndpoint).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a gateway error returned in a RemoteResult', async () => {
+    const remote = {
+      classifyAll: vi.fn()
+        .mockResolvedValueOnce({ ok: false, error: { code: 'gateway/service-unavailable', message: 'reloading' } })
+        .mockResolvedValueOnce({ ok: true, value: [nativeTool] }),
+    } as unknown as CapabilityPolicyRemote
+
+    await expect(loadSnapshot(remote, [])).resolves.toMatchObject({ rows: [nativeTool] })
+    expect(remote.classifyAll).toHaveBeenCalledTimes(2)
+  })
+})

@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Generated build and packaging output
+lib/
+dist/
+build/
+*.tgz
+*.zip
+
+# Test and tool caches
+.vite/
+coverage/
+.nyc_output/
+.cache/
+
+# Logs and local runtime files
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# DSH / local machine state
+.dsh/
+*.session.json
+sessions/
+logs/
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo

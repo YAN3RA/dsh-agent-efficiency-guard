@@ -1,0 +1,537 @@
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
+import SkillRegistry from '@deepseek-ai/dsh-skill'
+import { createScope } from '@deepseek-ai/dsh-scope'
+import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
+import * as registry from '../src/registry.ts'
+import * as policy from '../src/policy.ts'
+import * as toolMetaInvoke from '../src/invoke.ts'
+
+const testSignal = new AbortController().signal
+
+function agentStub(name: string) {
+  return {
+    id: name,
+    options: {},
+    session: { header: { cwd: process.cwd() } },
+    ctx: new Context(),
+    status: 'idle',
+  } as never
+}
+
+async function setup(home: string, config: toolMetaInvoke.Config = {}, registryConfig: registry.Config = {}): Promise<Context> {
+  const ctx = new Context()
+  await ctx.plugin(SystemPrompt)
+  await ctx.plugin(ToolRuntime)
+  await ctx.plugin(SkillRegistry)
+  await ctx.plugin(SkillFileSystem, {
+    dshHome: `${home}/.dsh`,
+    agentsHome: `${home}/.agents`,
+    watch: false,
+  })
+  await ctx.plugin(registry, { stateFile: '', ...registryConfig })
+  await ctx.plugin(toolMetaInvoke, config)
+  return ctx
+}
+
+function registerMcpTool(
+  ctx: Context,
+  server: string,
+  raw: string,
+  description: string,
+  onExecute?: (args: unknown) => unknown,
+): string {
+  const name = `mcp__${server}__${raw}`
+  ctx.tools.register(defineTool({
+    name,
+    description,
+    parameters: { title: { type: 'string', required: true, description: 'Title' } },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean', required: true }, received: { type: 'json' }, id: { type: 'string' } } },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+    },
+    async execute(args) {
+      if (onExecute) return onExecute(args) as never
+      return { ok: true, received: args }
+    },
+  }))
+  return name
+}
+
+/**
+ * Register a *parameterless* MCP tool (no required properties) — the shape of
+ * `dbx_list_connections` / `list_pages`. `registerMcpTool` above declares a
+ * required `title`, which is right for the forwarding tests but wrong for the
+ * omitted-args contract: there the target must be reached with `{}`.
+ */
+function registerParameterlessMcpTool(
+  ctx: Context,
+  server: string,
+  raw: string,
+  description: string,
+  onExecute?: (args: unknown) => unknown,
+): string {
+  const name = `mcp__${server}__${raw}`
+  ctx.tools.register(defineTool({
+    name,
+    description,
+    parameters: {},
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean', required: true }, received: { type: 'json' } } },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+    },
+    async execute(args) {
+      if (onExecute) return onExecute(args) as never
+      return { ok: true, received: args }
+    },
+  }))
+  return name
+}
+
+function registerNativeTool(
+  ctx: Context,
+  name: string,
+  description: string,
+  onExecute?: (args: unknown) => unknown,
+): string {
+  ctx.tools.register(defineTool({
+    name,
+    description,
+    parameters: { command: { type: 'string', required: true, description: 'Command to run' } },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean', required: true }, received: { type: 'json' } } },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+    },
+    async execute(args) {
+      if (onExecute) return onExecute(args) as never
+      return { ok: true, received: args }
+    },
+  }))
+  return name
+}
+
+async function writeSkill(root: string, name: string, description: string, body: string): Promise<void> {
+  const { mkdir, writeFile } = await import('node:fs/promises')
+  const { join } = await import('node:path')
+  const dir = join(root, name)
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`)
+}
+
+async function runTool(
+  ctx: Context,
+  name: string,
+  args: Record<string, unknown>,
+  agent: unknown = agentStub('agent'),
+): Promise<{ value: unknown; isError: boolean }> {
+  const result = await ctx.tools.execute({
+    callId: ToolCallId(`call-${name}`),
+    name,
+    arguments: args,
+    agent: agent as never,
+    signal: testSignal,
+  })
+  return { value: result.value, isError: result.isError }
+}
+
+describe('capability-menu-invoke', () => {
+  it('preserves the caller session for an On-demand native tool', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = await setup(home)
+    await ctx.plugin(policy, { tools: { 'on-demand': ['ppt_list_templates'] }, stateFile: '' })
+    ctx.tools.register(defineTool({
+      name: 'ppt_list_templates',
+      description: 'List presentation templates',
+      parameters: { workflow: { type: 'string', required: true } },
+      output: {
+        schema: { type: 'object', additionalProperties: true },
+        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+      },
+      async execute(args, exec) {
+        if (!exec.agent) throw new Error('PPT tools require an agent session')
+        return { workflow: args.workflow }
+      },
+    }))
+    await ctx.capability.refresh()
+    const result = await ctx.tools.execute({
+      callId: ToolCallId('ppt-session-repro'),
+      name: 'meta_invoke',
+      arguments: { id: 'ppt_list_templates', kind: 'tool', args: { workflow: 'wf-1' } },
+      agent: agentStub('ppt-session') as never,
+      signal: testSignal,
+    })
+    expect(result.isError, JSON.stringify(result.content)).toBe(false)
+    expect(result.value).toMatchObject({ ok: true, kind: 'mcp' })
+  })
+
+  it('does not bypass a caller scope restriction by known id', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = await setup(home)
+    const name = registerMcpTool(ctx, 'secret', 'read', 'Restricted tool')
+    await ctx.capability.refresh()
+    const agent = agentStub('restricted') as { ctx: Context }
+    const scoped = createScope(ctx, agent as never)
+    agent.ctx = scoped.ctx
+    await scoped.ctx.plugin({
+      name: 'restrict-secret-tool',
+      inject: ['tools'],
+      apply(restrictedCtx) { restrictedCtx.tools.restrict({ deny: [name] }) },
+    })
+    const result = await runTool(ctx, 'meta_invoke', {
+      id: name, kind: 'tool', args: { title: 'x' },
+    }, agent)
+    expect(result.isError).toBe(true)
+  })
+  it('forwards MCP calls through the tool pipeline and preserves args', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = await setup(home)
+    let received: unknown
+    const issue = registerMcpTool(ctx, 'gongfeng', 'create_issue', 'Create an issue', args => {
+      received = args
+      return { ok: true, id: 'issue-1' }
+    })
+    await ctx.capability.refresh()
+
+    const { value, isError } = await runTool(ctx, 'meta_invoke', { id: issue, kind: 'tool', args: { title: 'hello' } })
+    expect(isError).toBe(false)
+    const result = value as { ok: boolean; kind: string; id: string; detail: { forwarded: boolean; target: string } }
+    expect(result.ok).toBe(true)
+    expect(result.kind).toBe('mcp')
+    expect(result.detail.forwarded).toBe(true)
+    expect(result.detail.target).toBe(issue)
+    expect(received).toEqual({ title: 'hello' })
+  })
+
+  it('rejects a stringified args payload instead of silently forwarding {}', async () => {
+    // `args` is declared as an object and the tool pipeline enforces that before
+    // `execute` runs, so a provider that stringifies the payload now fails loudly
+    // instead of having the MCP layer silently degrade the call to `{}` and the
+    // target server report "missing field <param>" (issue #4).
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = await setup(home)
+    let called = false
+    const issue = registerMcpTool(ctx, 'gongfeng', 'create_issue', 'Create an issue', args => {
+      called = true
+      return { ok: true, received: args }
+    })
+    await ctx.capability.refresh()
+
+    const stringified = JSON.stringify({ title: 'from-string' })
+    const { isError } = await runTool(ctx, 'meta_invoke', { id: issue, kind: 'tool', args: stringified })
+    expect(isError).toBe(true)
+    // The target tool must never be reached with a wrong (or empty) argument object.
+    expect(called).toBe(false)
+
+    // A non-JSON string is the same contract violation, so it is rejected too.
+    const nonJson = await runTool(ctx, 'meta_invoke', { id: issue, kind: 'tool', args: 'not a json object' })
+    expect(nonJson.isError).toBe(true)
+    expect(called).toBe(false)
+  })
+
+  it('rejects an array-shaped args payload (object required)', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = await setup(home)
+    const issue = registerMcpTool(ctx, 'gongfeng', 'create_issue', 'Create an issue')
+    await ctx.capability.refresh()
+
+    const { isError } = await runTool(ctx, 'meta_invoke', { id: issue, kind: 'tool', args: ['title', 'x'] })
+    expect(isError).toBe(true)
+  })
+
+  it('names a nested {id, kind, args} envelope instead of forwarding it', async () => {
+    // `args` being an object satisfies the contract, so an un-stringified
+    // envelope used to reach the target as a wrong parameter object and surface
+    // as an unrelated server error. The shape is now called out by name; it is
+    // never rewritten, because a wrong-but-plausible call is worse than a loud
+    // error (issue #10).
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = await setup(home)
+    let called = false
+    const issue = registerMcpTool(ctx, 'gongfeng', 'create_issue', 'Create an issue', args => {
+      called = true
+      return { ok: true, received: args }
+    })
+    await ctx.capability.refresh()
+
+    const envelope = { id: issue, kind: 'tool', args: { title: 'x' } }
+    const result = await ctx.tools.execute({
+      callId: ToolCallId('call-envelope'),
+      name: 'meta_invoke',
+      arguments: { id: issue, kind: 'tool', args: envelope },
+      agent: agentStub('agent') as never,
+      signal: testSignal,
+    })
+    expect(result.isError).toBe(true)
+    const text = result.content.map(block => block.type === 'text' ? block.text : '').join('\n')
+    expect(text).toContain('nested { id, kind, args } envelope')
+    // The target must never see the envelope as its argument object.
+    expect(called).toBe(false)
+  })
+
+  it('leaves a target that declares id/kind parameters alone', async () => {
+    // The diagnostic must not fire for a tool whose real parameters are the
+    // envelope's keys.
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = await setup(home)
+    let received: unknown
+    const name = 'mcp__gongfeng__dispatcher'
+    ctx.tools.register(defineTool({
+      name,
+      description: 'Takes id/kind/args itself',
+      parameters: {
+        id: { type: 'string', required: true, description: 'Target id' },
+        kind: { type: 'string', required: true, description: 'Target kind' },
+        args: { type: 'json', description: 'Payload' },
+      },
+      output: {
+        schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean', required: true }, received: { type: 'json' } } },
+        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+      },
+      async execute(args) {
+        received = args
+        return { ok: true, received: args }
+      },
+    }))
+    await ctx.capability.refresh()
+
+    const payload = { id: name, kind: 'tool', args: { title: 'x' } }
+    const { isError } = await runTool(ctx, 'meta_invoke', { id: name, kind: 'tool', args: payload })
+    expect(isError).toBe(false)
+    expect(received).toEqual(payload)
+  })
+
+  it('treats omitted args as an empty call on a parameterless tool', async () => {
+    // Second half of the same contract: with no `args` field at all the nested
+    // dispatch used to receive `arguments: undefined`, which the pipeline
+    // rejects with "tool execution arguments must be losslessly
+    // JSON-serializable". The target must be reached with `{}` instead.
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = await setup(home)
+    let received: unknown = 'sentinel'
+    // Parameterless MCP tool: same shape as dbx_list_connections / list_pages.
+    const list = registerParameterlessMcpTool(ctx, 'gongfeng', 'list_pages', 'List pages', args => {
+      received = args
+      return { ok: true }
+    })
+    await ctx.capability.refresh()
+
+    const { isError } = await runTool(ctx, 'meta_invoke', { id: list, kind: 'tool' })
+    expect(isError).toBe(false)
+    expect(received).toEqual({})
+  })
+
+  it('applies the same object contract to skill calls', async () => {
+    // The contract is declared once on `args`, so it holds for both kinds: a
+    // skill load that passes a stringified payload is rejected up front instead
+    // of being silently ignored. (An omitted `args` keeps working — see the
+    // skill-load tests below.)
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = await setup(home)
+    await writeSkill(`${home}/.agents/skills`, 'frontend-design', 'Design guidance', 'Follow the design principles.')
+    await ctx.capability.refresh()
+
+    const { isError } = await runTool(ctx, 'meta_invoke', { id: 'frontend-design', kind: 'skill', args: '"whatever"' })
+    expect(isError).toBe(true)
+  })
+
+  it('surfaces target failure as an isError result', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = await setup(home)
+    const failing = registerMcpTool(ctx, 'gongfeng', 'boom', 'Always fails', () => {
+      throw new Error('target exploded')
+    })
+    await ctx.capability.refresh()
+
+    const { isError } = await runTool(ctx, 'meta_invoke', { id: failing, kind: 'tool', args: { title: 'x' } })
+    expect(isError).toBe(true)
+  })
+
+  it('loads a skill and renders content like the skill tool', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    // Skills must exist before the skill provider/registry load (see registry tests).
+    await writeSkill(`${home}/.agents/skills`, 'frontend-design', 'Design guidance', 'Follow the design principles.')
+    const ctx = await setup(home)
+    await ctx.capability.refresh()
+
+    const { value, isError } = await runTool(ctx, 'meta_invoke', { id: 'frontend-design', kind: 'skill' })
+    expect(isError).toBe(false)
+    const result = value as { ok: boolean; kind: string; detail: { name: string; content: string } }
+    expect(result.ok).toBe(true)
+    expect(result.kind).toBe('skill')
+    expect(result.detail.name).toBe('frontend-design')
+    expect(result.detail.content).toContain('design principles')
+  })
+
+  it('resolve mode returns the target schema without executing', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    let executed = false
+    const ctx = await setup(home, { forwardMode: 'resolve' })
+    const issue = registerMcpTool(ctx, 'gongfeng', 'create_issue', 'Create an issue', () => {
+      executed = true
+      return { ok: true }
+    })
+    await ctx.capability.refresh()
+
+    const { value, isError } = await runTool(ctx, 'meta_invoke', { id: issue, kind: 'tool', args: { title: 'x' } })
+    expect(isError).toBe(false)
+    const result = value as { ok: boolean; kind: string; detail: { target: string; parameters: unknown } }
+    expect(result.kind).toBe('resolve')
+    expect(result.detail.target).toBe(issue)
+    expect(result.detail.parameters).toBeDefined()
+    expect(executed).toBe(false)
+  })
+
+  it('forwards a harness-native tool (built-in server) through the tool pipeline', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = await setup(home)
+    let received: unknown
+    const bash = registerNativeTool(ctx, 'bash', 'Run commands in a bash shell', args => {
+      received = args
+      return { ok: true }
+    })
+    await ctx.capability.refresh()
+
+    const { value, isError } = await runTool(ctx, 'meta_invoke', { id: bash, kind: 'tool', args: { command: 'echo hi' } })
+    expect(isError).toBe(false)
+    const result = value as { ok: boolean; kind: string; detail: { forwarded: boolean; target: string } }
+    expect(result.ok).toBe(true)
+    expect(result.kind).toBe('mcp')
+    expect(result.detail.forwarded).toBe(true)
+    expect(result.detail.target).toBe(bash)
+    expect(received).toEqual({ command: 'echo hi' })
+  })
+
+  it('executes an On-demand native tool while it stays out of the exposure surface', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SkillFileSystem, {
+      dshHome: `${home}/.dsh`,
+      agentsHome: `${home}/.agents`,
+      watch: false,
+    })
+    await ctx.plugin(registry, { stateFile: '' })
+    await ctx.plugin(policy, { tools: { 'on-demand': ['grep'] }, stateFile: '' })
+    await ctx.plugin(toolMetaInvoke, {})
+    const grep = registerNativeTool(ctx, 'grep', 'Search file contents with regular expressions', args => ({ ok: true, received: args }))
+    await ctx.capability.refresh()
+
+    // On-demand natives are projected out of the model-facing tool list…
+    const assembly = await ctx.systemPrompt.assemble()
+    expect(assembly.tools.map(tool => tool.name)).not.toContain(grep)
+
+    // …but stay reachable through meta_invoke.
+    const { value, isError } = await runTool(ctx, 'meta_invoke', { id: grep, kind: 'tool', args: { command: 'ls' } })
+    expect(isError).toBe(false)
+    const result = value as { ok: boolean; kind: string; detail: { forwarded: boolean; target: string } }
+    expect(result.ok).toBe(true)
+    expect(result.detail.target).toBe(grep)
+  })
+
+  it('rejects an unknown capability id', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = await setup(home)
+    const { isError } = await runTool(ctx, 'meta_invoke', { id: 'mcp__nope__missing', kind: 'tool' })
+    expect(isError).toBe(true)
+  })
+
+  it('rejects a disabled capability', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SkillFileSystem, {
+      dshHome: `${home}/.dsh`,
+      agentsHome: `${home}/.agents`,
+      watch: false,
+    })
+    await ctx.plugin(registry, { stateFile: '' })
+    await ctx.plugin(policy, { tools: { disabled: ['mcp__gongfeng__create_issue'] } })
+    await ctx.plugin(toolMetaInvoke, {})
+    const issue = registerMcpTool(ctx, 'gongfeng', 'create_issue', 'Create an issue')
+    await ctx.capability.refresh()
+
+    const { isError } = await runTool(ctx, 'meta_invoke', { id: issue, kind: 'tool', args: { title: 'x' } })
+    expect(isError).toBe(true)
+  })
+
+  it('rejects a disabled skill', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    await writeSkill(`${home}/.agents/skills`, 'forbidden-skill', 'Forbidden skill body', 'Body text.')
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SkillFileSystem, {
+      dshHome: `${home}/.dsh`,
+      agentsHome: `${home}/.agents`,
+      watch: false,
+    })
+    await ctx.plugin(registry, { stateFile: '' })
+    await ctx.plugin(policy, { skills: { disabled: ['forbidden-skill'] } })
+    await ctx.plugin(toolMetaInvoke, {})
+    await ctx.capability.refresh()
+
+    const { isError } = await runTool(ctx, 'meta_invoke', { id: 'forbidden-skill', kind: 'skill' })
+    expect(isError).toBe(true)
+  })
+
+  it('dedups already-loaded skills within one session and returns a short reminder on repeat', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    await writeSkill(`${home}/.agents/skills`, 'frontend-design', 'Design guidance', 'Full design instructions body here.')
+    const ctx = await setup(home)
+    await ctx.capability.refresh()
+    // Same agent object = same session: the second load must be a short reminder.
+    const agent = agentStub('agent')
+
+    const first = await runTool(ctx, 'meta_invoke', { id: 'frontend-design', kind: 'skill' }, agent)
+    expect(first.isError).toBe(false)
+    const firstDetail = (first.value as { detail: { content: string } }).detail
+    expect(firstDetail.content).toContain('Full design instructions')
+
+    const second = await runTool(ctx, 'meta_invoke', { id: 'frontend-design', kind: 'skill' }, agent)
+    expect(second.isError).toBe(false)
+    const secondDetail = (second.value as { detail: { content: string } }).detail
+    expect(secondDetail.content).not.toContain('Full design instructions')
+    expect(secondDetail.content).toContain('already loaded')
+
+    const { writeFile } = await import('node:fs/promises')
+    await writeFile(`${home}/.agents/skills/frontend-design/SKILL.md`, '---\nname: frontend-design\ndescription: Design guidance\n---\n\nUpdated design instructions.\n')
+    await ctx.capability.refresh()
+    const forced = await runTool(ctx, 'meta_invoke', { id: 'frontend-design', kind: 'skill', force: true }, agent)
+    expect(forced.isError).toBe(false)
+    expect((forced.value as { detail: { content: string } }).detail.content).toContain('Updated design instructions')
+  })
+
+  it('keeps loaded-skill dedup isolated per session in the same process', async () => {
+    const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
+    // A registered On-demand skill (agent-dir skill) resolves through ctx.skills
+    // for both agents in the same process.
+    await writeSkill(`${home}/.agents/skills`, 'frontend-design', 'Design guidance', 'Full design instructions body here.')
+    const ctx = await setup(home)
+    await ctx.capability.refresh()
+
+    const agentA = agentStub('agent-a')
+    const agentB = agentStub('agent-b')
+
+    const a1 = await runTool(ctx, 'meta_invoke', { id: 'frontend-design', kind: 'skill' }, agentA)
+    const b1 = await runTool(ctx, 'meta_invoke', { id: 'frontend-design', kind: 'skill' }, agentB)
+    const a2 = await runTool(ctx, 'meta_invoke', { id: 'frontend-design', kind: 'skill' }, agentA)
+
+    const content = (result: { value: unknown }): string => (result.value as { detail: { content: string } }).detail.content
+    // Session A loads the full body once…
+    expect(content(a1)).toContain('Full design instructions')
+    // …session B in the same process must get the full body too (not a reminder).
+    expect(content(b1)).toContain('Full design instructions')
+    // Re-loading in session A returns the short reminder.
+    expect(content(a2)).toContain('already loaded')
+  })
+})

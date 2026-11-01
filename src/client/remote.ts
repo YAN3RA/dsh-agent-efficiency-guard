@@ -1,0 +1,643 @@
+/**
+ * Client-side Typert remote contribution for the `capabilityPolicy` Host
+ * gateway (`src/server/remote.ts`). Mirrors the generated shape that
+ * `@deepseek-ai/dsh-typert-generator` emits (see
+ * `@deepseek-ai/dsh-host-plugin-inventory/lib/typert.remote-client.js`): it
+ * augments `@deepseek-ai/dsh-typert-protocol` with the `capabilityPolicy`
+ * namespace and exports a `TYPERT_REMOTE` contribution that the browser
+ * plugin mounts via `ctx.remote.$mount(...)`.
+ */
+import { z } from 'zod'
+import type {
+  RemoteResult,
+  TypertRemoteContribution,
+} from '@deepseek-ai/dsh-typert-protocol'
+import type { CapabilityDiagnostics } from '../registry.ts'
+export type { CapabilityDiagnostics } from '../registry.ts'
+export type { SearchMetadata, SearchMetadataUpdate } from '../registry.ts'
+import type { SearchMetadata, SearchMetadataUpdate } from '../registry.ts'
+
+/** Create a strict codec for the DSH 0.2 protocol. */
+function strictCodec(typeSymbol: string, schema: { parse(value: unknown): unknown }) {
+  return { mode: 'strict' as const, typeSymbol, create: () => schema }
+}
+
+/** Read-only row: one capability's Resident/On-demand/Disabled classification. */
+export interface CapabilityRow {
+  readonly id: string
+  readonly kind: 'tool' | 'skill'
+  readonly name: string
+  readonly server?: string
+  /** Skill source root label (`project-dsh`/`user-agents`/…), present only for skills. */
+  readonly source?: string
+  /**
+   * Agent preset id, present only for skills that live in a preset's own layer.
+   * The source label is `custom` for these as well, so this is what tells a
+   * preset skill apart from one in a user-configured `customSkillDirs` root.
+   */
+  readonly preset?: string
+  /** The skill's own directory on disk, present only for skills whose provider has one. */
+  readonly path?: string
+  readonly class: 'resident' | 'on-demand' | 'disabled'
+  readonly classLabel?: string
+  readonly mandatory: boolean
+}
+
+/** Current exposure rules and the live on-demand search summaries. */
+export interface CatalogDocs {
+  /** Effective rule configuration in YAML. */
+  readonly policyYaml: string
+  readonly summaryMaxChars: number
+  readonly searchSettingsEnabled: boolean
+  readonly onDemand: readonly {
+    readonly id: string
+    readonly kind: 'tool' | 'skill'
+    readonly summary: string
+    readonly server?: string
+  }[]
+}
+
+export interface SelfUpdateStatus {
+  readonly current: string
+  readonly latest: string
+  readonly updateAvailable: boolean
+  readonly updatable: boolean
+  readonly reason?: 'local' | 'non-registry' | 'profile-unavailable'
+  readonly sourcePath?: string
+}
+
+const selfUpdateStatus$schema = z.object({
+  current: z.string(),
+  latest: z.string(),
+  updateAvailable: z.boolean(),
+  updatable: z.boolean(),
+  reason: z.union([z.literal('local'), z.literal('non-registry'), z.literal('profile-unavailable')]).optional(),
+  sourcePath: z.string().optional(),
+})
+
+const capabilityDiagnostics$schema = z.object({
+  unavailableSkills: z.array(z.object({ name: z.string(), source: z.string(), preset: z.string().optional() })),
+  shadowedSkills: z.array(z.object({ name: z.string(), selectedFrom: z.string(), shadowedFrom: z.string() })),
+  brokenPresets: z.array(z.object({ id: z.string(), reason: z.string() })),
+  unbrowseableSkills: z.array(z.object({ name: z.string(), reason: z.string() })),
+  undocumentedSkills: z.array(z.object({ name: z.string(), summary: z.string() })),
+  catalog: z.object({
+    state: z.union([z.literal('empty'), z.literal('ready')]),
+    count: z.number(),
+  }),
+})
+
+/** One direct child in a skill directory listing. */
+export interface SkillFileEntry {
+  readonly name: string
+  readonly type: 'file' | 'directory'
+}
+
+/** Full detail projection of one capability (schema, description, stats). */
+export interface ToolDetail {
+  readonly id: string
+  readonly kind: 'tool' | 'skill'
+  readonly actions: readonly string[]
+  readonly name: string
+  readonly description: string
+  readonly whenToUse?: string
+  readonly skillContent?: string
+  readonly parameters: Record<string, unknown>
+  readonly output?: Record<string, unknown>
+  readonly origin: { readonly provider: string; readonly serverName?: string; readonly path?: string; readonly source?: string; readonly preset?: string }
+  readonly tags: readonly string[]
+  readonly stats: {
+    readonly uses: number
+    readonly successes: number
+    readonly failures: number
+    readonly totalMs: number
+    readonly lastUsedAt?: number
+  }
+}
+
+/** One MCP server declared in the patch file. */
+export interface McpLocation {
+  readonly id: string
+  readonly serverName: string
+  readonly transport: 'stdio' | 'streamable-http'
+  readonly disabled: boolean
+  readonly command?: string
+  readonly args?: readonly string[]
+  readonly env?: Readonly<Record<string, string>>
+  readonly cwd?: string
+  readonly url?: string
+  readonly headers?: Readonly<Record<string, string>>
+  readonly toolCallTimeoutMs?: number
+}
+
+/** One skill entry under a managed skill root (the user root or a project's). */
+export interface SkillLocation {
+  /** The entry's own name under `entryDir`; what update and remove address. */
+  readonly name: string
+  /** The name the skill declares in its `SKILL.md` — dsh's identity for it, and what a capability row is named. */
+  readonly skillName?: string
+  readonly path: string
+  readonly linked: boolean
+  readonly valid: boolean
+  /** `user` for the default root, `project` for a project's own skill root. */
+  readonly root: 'user' | 'project'
+  /** The skills directory holding the entry; pass it back to update or remove. */
+  readonly entryDir: string
+  /** The directory the entry points at, with symlinks resolved. */
+  readonly target?: string
+}
+
+/** Input for registering a new MCP server. */
+export interface McpInput {
+  readonly serverName: string
+  readonly transport: 'stdio' | 'streamable-http'
+  readonly command?: string
+  readonly args?: readonly string[]
+  readonly env?: Readonly<Record<string, string>>
+  readonly cwd?: string
+  readonly url?: string
+  readonly headers?: Readonly<Record<string, string>>
+  readonly toolCallTimeoutMs?: number
+}
+
+/** Input for editing a declared server (`serverName` is immutable). */
+export type McpUpdateInput = Omit<McpInput, 'serverName'>
+
+const stringRecord$schema = z.record(z.string(), z.string())
+
+const mcpLocation$schema = z.object({
+  id: z.string().readonly(),
+  serverName: z.string().readonly(),
+  transport: z.union([z.literal('stdio'), z.literal('streamable-http')]).readonly(),
+  disabled: z.boolean().readonly(),
+  command: z.string().optional().readonly(),
+  args: z.array(z.string()).optional().readonly(),
+  env: stringRecord$schema.optional().readonly(),
+  cwd: z.string().optional().readonly(),
+  url: z.string().optional().readonly(),
+  headers: stringRecord$schema.optional().readonly(),
+  toolCallTimeoutMs: z.number().optional().readonly(),
+})
+
+const skillLocation$schema = z.object({
+  name: z.string().readonly(),
+  path: z.string().readonly(),
+  linked: z.boolean().readonly(),
+  valid: z.boolean().readonly(),
+  root: z.union([z.literal('user'), z.literal('project')]).readonly(),
+  entryDir: z.string().readonly(),
+  target: z.string().optional().readonly(),
+})
+
+const mcpInput$schema = z.object({
+  serverName: z.string(),
+  transport: z.union([z.literal('stdio'), z.literal('streamable-http')]),
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  env: stringRecord$schema.optional(),
+  cwd: z.string().optional(),
+  url: z.string().optional(),
+  headers: stringRecord$schema.optional(),
+  toolCallTimeoutMs: z.number().optional(),
+})
+
+const mcpUpdateInput$schema = z.object({
+  transport: z.union([z.literal('stdio'), z.literal('streamable-http')]),
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  env: stringRecord$schema.optional(),
+  cwd: z.string().optional(),
+  url: z.string().optional(),
+  headers: stringRecord$schema.optional(),
+  toolCallTimeoutMs: z.number().optional(),
+})
+
+const capabilityRow$schema = z.object({
+  id: z.string().readonly(),
+  kind: z.union([z.literal('tool'), z.literal('skill')]).readonly(),
+  name: z.string().readonly(),
+  server: z.string().optional().readonly(),
+  source: z.string().optional().readonly(),
+  preset: z.string().optional().readonly(),
+  path: z.string().optional().readonly(),
+  class: z.union([z.literal('resident'), z.literal('on-demand'), z.literal('disabled')]).readonly(),
+  classLabel: z.string().optional().readonly(),
+  mandatory: z.boolean().readonly(),
+})
+
+const skillFileEntry$schema = z.object({
+  name: z.string().readonly(),
+  type: z.union([z.literal('file'), z.literal('directory')]).readonly(),
+})
+
+const catalogDocs$schema = z.object({
+  policyYaml: z.string().readonly(),
+  summaryMaxChars: z.number().readonly(),
+  searchSettingsEnabled: z.boolean().readonly(),
+  onDemand: z.array(z.object({
+    id: z.string().readonly(),
+    kind: z.union([z.literal('tool'), z.literal('skill')]).readonly(),
+    summary: z.string().readonly(),
+    server: z.string().optional().readonly(),
+  })).readonly(),
+})
+
+const toolDetail$schema = z.object({
+  id: z.string().readonly(),
+  kind: z.union([z.literal('tool'), z.literal('skill')]).readonly(),
+  actions: z.array(z.string()).readonly(),
+  name: z.string().readonly(),
+  description: z.string().readonly(),
+  whenToUse: z.string().optional().readonly(),
+  skillContent: z.string().optional().readonly(),
+  parameters: z.record(z.string(), z.unknown()).readonly(),
+  output: z.record(z.string(), z.unknown()).optional().readonly(),
+  origin: z.object({
+    provider: z.string().readonly(),
+    serverName: z.string().optional().readonly(),
+    path: z.string().optional().readonly(),
+    source: z.string().optional().readonly(),
+    preset: z.string().optional().readonly(),
+  }).readonly(),
+  tags: z.array(z.string()).readonly(),
+  stats: z.object({
+    uses: z.number().readonly(),
+    successes: z.number().readonly(),
+    failures: z.number().readonly(),
+    totalMs: z.number().readonly(),
+    lastUsedAt: z.number().optional().readonly(),
+  }).readonly(),
+})
+
+const searchMetadata$schema = z.object({
+  id: z.string(),
+  kind: z.union([z.literal('tool'), z.literal('skill')]),
+  defaultDescription: z.string(),
+  description: z.string().optional(),
+  maxChars: z.number(),
+})
+
+const searchMetadataUpdate$schema = z.object({
+  id: z.string(),
+  kind: z.union([z.literal('tool'), z.literal('skill')]),
+  description: z.string(),
+})
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface TypertRemoteNamespace$6361706162696c697479506f6c696379 {
+    checkSelfUpdate: () => Promise<RemoteResult<SelfUpdateStatus>>
+    installSelfUpdate: (version: string) => Promise<RemoteResult<void>>
+    switchSelfToNpm: (version: string) => Promise<RemoteResult<void>>
+    getConfig: () => Promise<RemoteResult<Record<string, unknown>>>
+    updateConfig: (partial: Record<string, unknown>) => Promise<RemoteResult<void>>
+    classifyAll: () => Promise<RemoteResult<CapabilityRow[]>>
+    getDiagnostics: () => Promise<RemoteResult<CapabilityDiagnostics>>
+    refresh: () => Promise<RemoteResult<void>>
+    catalogVersion: () => Promise<RemoteResult<number>>
+    listSkillDir: (id: string, relPath?: string) => Promise<RemoteResult<SkillFileEntry[] | undefined>>
+    readSkillFile: (id: string, relPath: string) => Promise<RemoteResult<string | undefined>>
+    getDetail: (id: string) => Promise<RemoteResult<ToolDetail | undefined>>
+    getSearchMetadata: (id: string, kind: 'tool' | 'skill') => Promise<RemoteResult<SearchMetadata | undefined>>
+    updateSearchMetadata: (input: SearchMetadataUpdate) => Promise<RemoteResult<void>>
+    updateSummaryMaxChars: (value: number) => Promise<RemoteResult<void>>
+    getCatalogDocs: () => Promise<RemoteResult<CatalogDocs>>
+    listLocations: () => Promise<RemoteResult<McpLocation[]>>
+    addLocation: (input: McpInput) => Promise<RemoteResult<string>>
+    removeLocation: (id: string) => Promise<RemoteResult<boolean>>
+    updateLocation: (id: string, input: McpUpdateInput) => Promise<RemoteResult<boolean>>
+    listSkillLocations: () => Promise<RemoteResult<SkillLocation[]>>
+    addSkillLocation: (dir: string, projectPath?: string) => Promise<RemoteResult<string>>
+    importSkillFromGitHub: (url: string, projectPath?: string) => Promise<RemoteResult<string>>
+    removeSkillLocation: (name: string, entryDir?: string) => Promise<RemoteResult<boolean>>
+    adoptSkillLocation: (name: string) => Promise<RemoteResult<string>>
+    updateSkillLocation: (name: string, dir: string, entryDir?: string) => Promise<RemoteResult<boolean>>
+  }
+  interface TypertRemoteMap {
+    'capabilityPolicy/checkSelfUpdate': () => Promise<RemoteResult<SelfUpdateStatus>>
+    'capabilityPolicy/installSelfUpdate': (version: string) => Promise<RemoteResult<void>>
+    'capabilityPolicy/switchSelfToNpm': (version: string) => Promise<RemoteResult<void>>
+    'capabilityPolicy/getConfig': () => Promise<RemoteResult<Record<string, unknown>>>
+    'capabilityPolicy/updateConfig': (partial: Record<string, unknown>) => Promise<RemoteResult<void>>
+    'capabilityPolicy/classifyAll': () => Promise<RemoteResult<CapabilityRow[]>>
+    'capabilityPolicy/getDiagnostics': () => Promise<RemoteResult<CapabilityDiagnostics>>
+    'capabilityPolicy/refresh': () => Promise<RemoteResult<void>>
+    'capabilityPolicy/catalogVersion': () => Promise<RemoteResult<number>>
+    'capabilityPolicy/listSkillDir': (id: string, relPath?: string) => Promise<RemoteResult<SkillFileEntry[] | undefined>>
+    'capabilityPolicy/readSkillFile': (id: string, relPath: string) => Promise<RemoteResult<string | undefined>>
+    'capabilityPolicy/getDetail': (id: string) => Promise<RemoteResult<ToolDetail | undefined>>
+    'capabilityPolicy/getSearchMetadata': (id: string, kind: 'tool' | 'skill') => Promise<RemoteResult<SearchMetadata | undefined>>
+    'capabilityPolicy/updateSearchMetadata': (input: SearchMetadataUpdate) => Promise<RemoteResult<void>>
+    'capabilityPolicy/updateSummaryMaxChars': (value: number) => Promise<RemoteResult<void>>
+    'capabilityPolicy/getCatalogDocs': () => Promise<RemoteResult<CatalogDocs>>
+    'capabilityPolicy/listLocations': () => Promise<RemoteResult<McpLocation[]>>
+    'capabilityPolicy/addLocation': (input: McpInput) => Promise<RemoteResult<string>>
+    'capabilityPolicy/removeLocation': (id: string) => Promise<RemoteResult<boolean>>
+    'capabilityPolicy/updateLocation': (id: string, input: McpUpdateInput) => Promise<RemoteResult<boolean>>
+    'capabilityPolicy/listSkillLocations': () => Promise<RemoteResult<SkillLocation[]>>
+    'capabilityPolicy/addSkillLocation': (dir: string, projectPath?: string) => Promise<RemoteResult<string>>
+    'capabilityPolicy/importSkillFromGitHub': (url: string, projectPath?: string) => Promise<RemoteResult<string>>
+    'capabilityPolicy/removeSkillLocation': (name: string, entryDir?: string) => Promise<RemoteResult<boolean>>
+    'capabilityPolicy/adoptSkillLocation': (name: string) => Promise<RemoteResult<string>>
+    'capabilityPolicy/updateSkillLocation': (name: string, dir: string, entryDir?: string) => Promise<RemoteResult<boolean>>
+  }
+  interface TypertRemoteNamespaceMap {
+    'capabilityPolicy': TypertRemoteNamespace$6361706162696c697479506f6c696379
+  }
+}
+
+export const TYPERT_REMOTE: TypertRemoteContribution = {
+  package: 'dsh-agent-efficiency-guard',
+  descriptors: [
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/checkSelfUpdate',
+      service: 'capabilityPolicy', namespace: 'capabilityPolicy', method: 'checkSelfUpdate',
+      invocation: { kind: 'direct' }, parameters: [],
+      result: strictCodec('SelfUpdateStatus', selfUpdateStatus$schema),
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/installSelfUpdate',
+      service: 'capabilityPolicy', namespace: 'capabilityPolicy', method: 'installSelfUpdate',
+      invocation: { kind: 'direct' },
+      parameters: [{ name: 'version', wire: 'version', source: 'json', codec: strictCodec('string', z.string()) }],
+      result: strictCodec('void', z.undefined()),
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/switchSelfToNpm',
+      service: 'capabilityPolicy', namespace: 'capabilityPolicy', method: 'switchSelfToNpm',
+      invocation: { kind: 'direct' },
+      parameters: [{ name: 'version', wire: 'version', source: 'json', codec: strictCodec('string', z.string()) }],
+      result: strictCodec('void', z.undefined()),
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/getConfig',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'getConfig',
+      invocation: { kind: 'direct' },
+      parameters: [],
+      result: strictCodec('Record<string, unknown>', z.record(z.string(), z.unknown())),
+      sourceLocation: { file: 'src/server/remote.ts', line: 61, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/updateConfig',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'updateConfig',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'partial', wire: 'partial', source: 'json', codec: strictCodec('Record<string, unknown>', z.record(z.string(), z.unknown())) },
+      ],
+      result: strictCodec('void', z.undefined()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 67, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/classifyAll',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'classifyAll',
+      invocation: { kind: 'direct' },
+      parameters: [],
+      result: strictCodec('dsh-agent-efficiency-guard#CapabilityRow', z.array(capabilityRow$schema)),
+      sourceLocation: { file: 'src/server/remote.ts', line: 73, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/getDiagnostics',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'getDiagnostics',
+      invocation: { kind: 'direct' },
+      parameters: [],
+      result: strictCodec('dsh-agent-efficiency-guard#CapabilityDiagnostics', capabilityDiagnostics$schema),
+      sourceLocation: { file: 'src/server/remote.ts', line: 80, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/refresh',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'refresh',
+      invocation: { kind: 'direct' },
+      parameters: [],
+      result: strictCodec('void', z.undefined()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 84, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/listSkillDir',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'listSkillDir',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'id', wire: 'id', source: 'json', codec: strictCodec('string', z.string()) },
+        { name: 'relPath', wire: 'relPath', source: 'json', acceptsUndefined: true, codec: strictCodec('string', z.string().optional()) },
+      ],
+      result: strictCodec('dsh-agent-efficiency-guard#SkillFileEntry[]', z.array(skillFileEntry$schema).optional()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 85, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/readSkillFile',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'readSkillFile',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'id', wire: 'id', source: 'json', codec: strictCodec('string', z.string()) },
+        { name: 'relPath', wire: 'relPath', source: 'json', codec: strictCodec('string', z.string()) },
+      ],
+      result: strictCodec('string', z.string().optional()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 91, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/getDetail',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'getDetail',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'id', wire: 'id', source: 'json', codec: strictCodec('string', z.string()) },
+      ],
+      result: strictCodec('dsh-agent-efficiency-guard#ToolDetail', toolDetail$schema.optional()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 79, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/getSearchMetadata',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'getSearchMetadata',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'id', wire: 'id', source: 'json', codec: strictCodec('string', z.string()) },
+        { name: 'kind', wire: 'kind', source: 'json', codec: strictCodec('CapabilityKind', z.union([z.literal('tool'), z.literal('skill')])) },
+      ],
+      result: strictCodec('SearchMetadata | undefined', searchMetadata$schema.optional()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 104, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/updateSearchMetadata',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'updateSearchMetadata',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'input', wire: 'input', source: 'json', codec: strictCodec('SearchMetadataUpdate', searchMetadataUpdate$schema) },
+      ],
+      result: strictCodec('void', z.undefined()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 109, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/updateSummaryMaxChars',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'updateSummaryMaxChars',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'value', wire: 'value', source: 'json', codec: strictCodec('number', z.number()) },
+      ],
+      result: strictCodec('void', z.undefined()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 115, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/getCatalogDocs',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'getCatalogDocs',
+      invocation: { kind: 'direct' },
+      parameters: [],
+      result: strictCodec('dsh-agent-efficiency-guard#CatalogDocs', catalogDocs$schema),
+      sourceLocation: { file: 'src/server/remote.ts', line: 104, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/listLocations',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'listLocations',
+      invocation: { kind: 'direct' },
+      parameters: [],
+      result: strictCodec('dsh-agent-efficiency-guard#McpLocation[]', z.array(mcpLocation$schema)),
+      sourceLocation: { file: 'src/server/remote.ts', line: 193, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/addLocation',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'addLocation',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'input', wire: 'input', source: 'json', codec: strictCodec('dsh-agent-efficiency-guard#McpInput', mcpInput$schema) },
+      ],
+      result: strictCodec('string', z.string()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 199, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/removeLocation',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'removeLocation',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'id', wire: 'id', source: 'json', codec: strictCodec('string', z.string()) },
+      ],
+      result: strictCodec('boolean', z.boolean()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 205, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/updateLocation',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'updateLocation',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'id', wire: 'id', source: 'json', codec: strictCodec('string', z.string()) },
+        { name: 'input', wire: 'input', source: 'json', codec: strictCodec('dsh-agent-efficiency-guard#McpUpdateInput', mcpUpdateInput$schema) },
+      ],
+      result: strictCodec('boolean', z.boolean()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 211, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/listSkillLocations',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'listSkillLocations',
+      invocation: { kind: 'direct' },
+      parameters: [],
+      result: strictCodec('dsh-agent-efficiency-guard#SkillLocation[]', z.array(skillLocation$schema)),
+      sourceLocation: { file: 'src/server/remote.ts', line: 229, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/addSkillLocation',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'addSkillLocation',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'dir', wire: 'dir', source: 'json', codec: strictCodec('string', z.string()) },
+        { name: 'projectPath', wire: 'projectPath', source: 'json', acceptsUndefined: true, codec: strictCodec('string', z.string().optional()) },
+      ],
+      result: strictCodec('string', z.string()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 252, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/importSkillFromGitHub',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'importSkillFromGitHub',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'url', wire: 'url', source: 'json', codec: strictCodec('string', z.string()) },
+        { name: 'projectPath', wire: 'projectPath', source: 'json', acceptsUndefined: true, codec: strictCodec('string', z.string().optional()) },
+      ],
+      result: strictCodec('string', z.string()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 263, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/removeSkillLocation',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'removeSkillLocation',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'name', wire: 'name', source: 'json', codec: strictCodec('string', z.string()) },
+        { name: 'entryDir', wire: 'entryDir', source: 'json', acceptsUndefined: true, codec: strictCodec('string', z.string().optional()) },
+      ],
+      result: strictCodec('boolean', z.boolean()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 258, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/adoptSkillLocation',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'adoptSkillLocation',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'name', wire: 'name', source: 'json', codec: strictCodec('string', z.string()) },
+      ],
+      result: strictCodec('string', z.string()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 259, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/updateSkillLocation',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'updateSkillLocation',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'name', wire: 'name', source: 'json', codec: strictCodec('string', z.string()) },
+        { name: 'dir', wire: 'dir', source: 'json', codec: strictCodec('string', z.string()) },
+        { name: 'entryDir', wire: 'entryDir', source: 'json', acceptsUndefined: true, codec: strictCodec('string', z.string().optional()) },
+      ],
+      result: strictCodec('boolean', z.boolean()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 264, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/catalogVersion',
+      service: 'capabilityPolicy',
+      namespace: 'capabilityPolicy',
+      method: 'catalogVersion',
+      invocation: { kind: 'direct' },
+      parameters: [],
+      result: strictCodec('number', z.number()),
+      sourceLocation: { file: 'src/server/remote.ts', line: 317, column: 3 },
+    },
+  ],
+}
+
+export default TYPERT_REMOTE

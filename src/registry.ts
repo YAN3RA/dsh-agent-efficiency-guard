@@ -1,0 +1,1253 @@
+/**
+ * Unified capability catalog for the DeepSeek Harness.
+ *
+ * @module @daweifu/capability-menu (registry plugin)
+ */
+
+import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import type { ScopeKey } from '@deepseek-ai/dsh-scope'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { JsonSchemaNode, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import { isModelInvocable, type SkillSummary } from '@deepseek-ai/dsh-skill'
+import { readFile, readdir, realpath, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { dirname, join, resolve, sep } from 'node:path'
+import { BUILT_IN_SERVER, MCP_ID_PREFIX } from './constants.ts'
+import { migrateLegacySearchState, readMenuState, writeSearchState } from './policy-state.ts'
+
+// Re-exported for the package's public surface (`/registry` subpath).
+export { BUILT_IN_SERVER, MCP_ID_PREFIX }
+
+/**
+ * Kinds of capability the catalog can hold.
+ * - `tool`:   action capability — executes a concrete action (an MCP tool or a
+ *   harness-native tool cataloged under the reserved `built-in` server).
+ * - `skill`:  action capability — loads the method/instructions for a task.
+ */
+export type CapabilityKind = 'tool' | 'skill'
+
+/**
+ * Stable invocation actions a capability can declare. Each kind maps to one
+ * canonical action; a new kind only deserves a new value here when it
+ * introduces a new action (not a new flavor of an existing one).
+ * `execute` = run the concrete action (a tool — MCP or native — via `ctx.tools.execute`);
+ * `load`    = load the method/instructions (a skill).
+ */
+export type CapabilityAction = 'execute' | 'load'
+
+/**
+ * Tool names that never enter the capability catalog: this plugin's own
+ * control plane (`meta_search`/`meta_invoke`, always Resident) and the
+ * reserved Code Mode presentation transport (`run_code`).
+ *
+ * Tool ids (the key everything else uses) are the REAL registered tool name:
+ * MCP tools are registered as `mcp__<server>__<raw>` by the harness MCP client
+ * and natives keep their bare name (`bash`/`read`/…). Skills have no
+ * name-level namespace: a skill's id IS its bare name and `kind` disambiguates
+ * it from a same-named tool.
+ */
+export const CATALOG_EXCLUDED_TOOLS: ReadonlySet<string> = new Set(['meta_search', 'meta_invoke', 'run_code'])
+
+/** Capability-stable origin metadata used by search filters and detail views. */
+export interface CapabilityOrigin {
+  /** Human/namespace label: an MCP server name, the reserved `built-in` for native tools, or a skill provider. */
+  readonly provider: string
+  /** Server namespace, present only for `kind: 'tool'` (`built-in` for native tools). */
+  readonly serverName?: string
+  /** Local skill path, present only for `kind: 'skill'`. */
+  readonly path?: string
+  /** Skill source root label (`project-dsh`/`user-agents`/…), present only for skills. */
+  readonly source?: string
+  /**
+   * Agent preset whose standing scope this skill was collected from, present
+   * only for skills that live in a preset layer.
+   *
+   * A preset's own `skill-filesystem` mounts its `skills/` directory through
+   * `customSkillDirs`, so such a skill is labelled `source: 'custom'` — the
+   * same label a user-configured `customSkillDirs` entry gets. The source
+   * label therefore cannot tell the two apart; this field is what the
+   * management surface groups on ("预设技能" vs. a user's custom root).
+   */
+  readonly preset?: string
+}
+
+/** Objective and subjective usage statistics, written back from `tools/result`. */
+export interface CapabilityStats {
+  readonly uses: number
+  readonly successes: number
+  readonly failures: number
+  readonly totalMs: number
+  readonly lastUsedAt?: number
+}
+
+/** One indexed capability. */
+export interface CapabilityRecord {
+  /** Stable identifier: `mcp__<server>__<raw>`, a native tool name, or a bare skill name. */
+  readonly id: string
+  readonly kind: CapabilityKind
+  /** The canonical invocation action(s) this capability exposes. */
+  readonly actions: readonly CapabilityAction[]
+  /** Model-facing name (the tool name or skill name without prefix). */
+  readonly name: string
+  readonly description: string
+  /** Skill-only extra routing guidance. */
+  readonly whenToUse?: string
+  readonly origin: CapabilityOrigin
+  /** Full parameter schema (MCP inputSchema / empty object for skills). */
+  readonly parameters: JsonSchemaNode
+  readonly invocation: { modelInvocable: boolean; userInvocable: boolean }
+  readonly tags: readonly string[]
+  readonly stats: CapabilityStats
+  /** Token-trimmed short description used by `meta_search` list mode. */
+  readonly summary: string
+}
+
+/** Agent-preset scope API in DSH 0.2. */
+interface AgentPresetScopes {
+  list(): Promise<Array<{ id: string; broken?: string }>>
+  /** The scope must stay retained during enumeration. */
+  acquireScope(id?: string): Promise<{ key: ScopeKey; [key: symbol]: unknown }>
+}
+
+/** Active agents carry session-local tools and the cwd needed for project skills. */
+interface LiveAgentRegistry {
+  list(): Agent[]
+}
+
+const ASYNC_DISPOSE =
+  (Symbol as unknown as { asyncDispose?: symbol }).asyncDispose ?? Symbol.for('nodejs.asyncDispose')
+
+/**
+ * Keep a preset lease until its scoped capabilities have been read, so a hot
+ * replacement cannot dispose the scope during enumeration.
+ */
+async function withAgentPresetScope<T>(
+  agentPresets: AgentPresetScopes,
+  id: string,
+  read: (scope: ScopeKey) => Promise<T> | T,
+): Promise<T> {
+  const lease = await agentPresets.acquireScope(id)
+  try {
+    return await read(lease.key)
+  } finally {
+    const dispose = lease[ASYNC_DISPOSE]
+    if (typeof dispose === 'function') await (dispose as () => Promise<void>).call(lease)
+  }
+}
+
+/** Lightweight list-mode projection of one capability (no full schema). */
+export interface CapabilitySummary {
+  readonly id: string
+  readonly kind: CapabilityKind
+  readonly name: string
+  readonly summary: string
+  readonly server?: string
+  /** Skill source root label, present only for `kind: 'skill'`. */
+  readonly source?: string
+  /** Agent preset id, present only for skills collected from a preset scope. */
+  readonly preset?: string
+  readonly path?: string
+  readonly tags: readonly string[]
+  readonly success_rate?: number
+  readonly uses: number
+}
+
+/** Full detail projection, including the parameter schema. */
+export interface CapabilityDetail {
+  readonly id: string
+  readonly kind: CapabilityKind
+  readonly actions: readonly CapabilityAction[]
+  readonly name: string
+  readonly description: string
+  readonly whenToUse?: string
+  readonly parameters: JsonSchemaNode
+  readonly output?: JsonSchemaNode
+  readonly origin: CapabilityOrigin
+  readonly tags: readonly string[]
+  readonly stats: CapabilityStats
+}
+
+/** Search filter options. */
+export interface MetaSearchOptions {
+  readonly kind?: CapabilityKind | 'all'
+  readonly server?: string | undefined
+  readonly tag?: string | undefined
+  /** Maximum number of results to return. */
+  readonly maxResults?: number
+  /** Zero-based result offset. */
+  readonly offset?: number
+  /**
+   * Viewing scope. Retained for caller ergonomics and optional authorization
+   * checks, but the policy does NOT use it to filter visibility — On-demand
+   * capabilities must remain searchable regardless of the caller's projection.
+   */
+  readonly scope?: ScopeKey | undefined
+  /** Query string for keyword matching; only matches are returned, with exact id/name first. */
+  readonly query?: string
+  /** Exact capability id. */
+  readonly id?: string
+  /** Whether to include the full body for skills in `getDetail` (default false). */
+  readonly detailIncludesBody?: boolean
+}
+
+/** Runtime detail resolution context. */
+export interface MetaLookupContext {
+  readonly cwd?: string | undefined
+  readonly signal?: AbortSignal | undefined
+  readonly scope?: ScopeKey | undefined
+}
+
+/** One direct child in a skill directory listing. */
+export interface SkillDirEntry {
+  readonly name: string
+  readonly type: 'file' | 'directory'
+}
+
+export interface CapabilityDiagnostics {
+  readonly unavailableSkills: readonly { readonly name: string; readonly source: string; readonly preset?: string }[]
+  readonly shadowedSkills: readonly { readonly name: string; readonly selectedFrom: string; readonly shadowedFrom: string }[]
+  readonly brokenPresets: readonly { readonly id: string; readonly reason: string }[]
+  readonly unbrowseableSkills: readonly { readonly name: string; readonly reason: string }[]
+  readonly undocumentedSkills: readonly { readonly name: string; readonly summary: string }[]
+  readonly catalog: { readonly state: 'empty' | 'ready'; readonly count: number }
+}
+
+/** User-owned text used only for discovery; the provider's definition stays intact. */
+export interface SearchMetadata {
+  readonly id: string
+  readonly kind: CapabilityKind
+  readonly defaultDescription: string
+  readonly description?: string
+  readonly maxChars: number
+}
+
+export interface SearchMetadataUpdate {
+  readonly id: string
+  readonly kind: CapabilityKind
+  /** Empty or provider-identical text restores the provider-derived description. */
+  readonly description: string
+}
+
+/** The `ctx.capability` service surface. */
+export interface CapabilityService {
+  /** Enumerate the current catalog (optionally filtered). */
+  search(options?: MetaSearchOptions): CapabilitySummary[]
+  /**
+   * Resolve one record by id, or undefined. Pass `kind` when the caller knows
+   * it (tools and skills may share a bare name, e.g. a skill named `bash`);
+   * without `kind` a same-name tool/skill pair resolves to undefined.
+   */
+  get(id: string, kind?: CapabilityKind): CapabilityRecord | undefined
+  /**
+   * Resolve one record's full detail (schema, output; skill body optional).
+   * `kind` has the same disambiguation semantics as {@link get}.
+   */
+  getDetail(id: string, kind?: CapabilityKind, context?: MetaLookupContext): Promise<CapabilityDetail | undefined>
+  /**
+   * List a skill's directory children (one level deep). The directory is
+   * resolved from the skill's own provider path, never from caller input;
+   * `relPath` (optional, relative to the skill root) descends into a child
+   * directory.
+   */
+  listSkillDir(id: string, relPath?: string): Promise<SkillDirEntry[] | undefined>
+  /**
+   * Read a text file inside a skill's directory, addressed by a relative path
+   * that is resolved against and confined to the skill root. Binary files
+   * (content containing NUL) return undefined.
+   */
+  readSkillFile(id: string, relPath: string): Promise<string | undefined>
+  /**
+   * Indexed skills whose provider exposes a filesystem directory, as
+   * `{ name, skillDir }` where `skillDir` is `<entryDir>/<name>`.
+   */
+  skillDirs(): ReadonlyArray<{ readonly name: string; readonly skillDir: string; readonly source?: string }>
+  diagnostics(): CapabilityDiagnostics
+  /** Return the current number of indexed capabilities. */
+  size(): number
+  /**
+   * Monotonic catalog version. It advances only when a rebuild finishes
+   * applying, so a caller that compares two samples learns "the catalog really
+   * moved" without re-reading the rows — which is what lets the management UI
+   * poll a single number instead of `classifyAll` on every tick.
+   *
+   * Not guaranteed to increase across a plugin restart (the counter is
+   * in-process), so compare with `!==`, never with `>`.
+   */
+  version(): number
+  /**
+   * Rebuild the catalog from the current tool/skill registries; resolves when
+   * done. In production the registry rebuilds automatically on `tools/change`
+   * / `skills/change`; this public handle is for tests and external orchestrators
+   * that want to force a rebuild.
+   */
+  refresh(): Promise<void>
+  /**
+   * Ask for a rebuild without waiting for it. The scheduler coalesces bursts,
+   * so a caller that changes something repeatedly (the management UI cycling
+   * a classification) triggers one rebuild, not one per call.
+   */
+  requestRefresh(): void
+  getSearchMetadata(id: string, kind: CapabilityKind): SearchMetadata | undefined
+  updateSearchMetadata(input: SearchMetadataUpdate): Promise<void>
+  summaryMaxChars(): number
+  searchSettingsEnabled(): boolean
+  updateSummaryMaxChars(value: number): Promise<void>
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    capability: CapabilityService
+  }
+}
+
+/** Registry configuration. */
+export interface Config {
+  /** Maximum summary length in characters (min 20). */
+  summaryMaxChars?: number
+  /** Whether to include the skill body in `getDetail` results (default false). */
+  detailIncludesBody?: boolean
+  /**
+   * Maximum search results returned (default 20). No upper bound is enforced:
+   * callers that need the whole catalog (the policy's `classifyAll`) pass a
+   * very large value on purpose, so capping here would silently truncate the
+   * management surface.
+   */
+  maxResults?: number
+  /** Experience-weighting intensity for ranking (0 disables, default 0.1). */
+  weighting?: number
+  /** Shared menu state; set to the policy entry's stateFile when customizing its path. */
+  stateFile?: string
+  /**
+   * Debounce window (ms) applied to catalog rebuilds triggered by
+   * `tools/change` / `skills/change`. The skill/preset lifecycle emits these
+   * events in bursts, and a rebuild's own registry access can emit further
+   * ones, so rebuilding once per event produced an unbounded CPU storm. The
+   * scheduler runs at most one rebuild at a time and coalesces a burst into a
+   * single follow-up after this window. Set to `0` to disable debouncing
+   * (every event still gets at most one coalesced rebuild, never a concurrent
+   * one). Default 200.
+   */
+  refreshDebounceMs?: number
+}
+
+/** Validate and default the registry configuration. */
+export const Config: z<Config> = z.object({
+  summaryMaxChars: z.number().default(320),
+  detailIncludesBody: z.boolean().default(false),
+  maxResults: z.number().default(20),
+  weighting: z.number().default(0.1),
+  // schemastery object properties are optional-by-default: a missing key or
+  // undefined value is accepted (no `meta.required`), so no `.optional()` needed.
+  stateFile: z.string(),
+  refreshDebounceMs: z.number().default(200),
+})
+
+function assertPositiveInteger(name: string, value: number, min: number): void {
+  if (!Number.isInteger(value) || value < min) {
+    throw new Error(`${name} must be an integer >= ${min}`)
+  }
+}
+
+function assertWeight(name: string, value: number): void {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error(`${name} must be a number in [0, 1]`)
+  }
+}
+
+/** True when `target` is `root` itself or sits below it. */
+function isUnder(root: string, target: string): boolean {
+  return target === root || target.startsWith(`${root}${sep}`)
+}
+
+/**
+ * Containment check for skill-directory access: `target` must stay inside
+ * `root`, both lexically (`resolve` already collapsed `..`) and physically —
+ * a symlink inside the skill directory must not lead out of it. Paths that do
+ * not exist yet cannot be resolved physically; those stay governed by the
+ * lexical check and the caller's own stat/read failure handling.
+ */
+async function isInside(root: string, target: string): Promise<boolean> {
+  if (!isUnder(root, target)) return false
+  const realRoot = await realpath(root).catch(() => undefined)
+  const realTarget = await realpath(target).catch(() => undefined)
+  if (realRoot === undefined || realTarget === undefined) return true
+  return isUnder(realRoot, realTarget)
+}
+
+/** Trim a description to a model-friendly summary. */
+function toSummary(description: string, maxChars: number): string {
+  const collapsed = description.replace(/\s+/g, ' ').trim()
+  if (collapsed.length <= maxChars) return collapsed
+  const prefix = collapsed.slice(0, maxChars - 1)
+  const lastBoundary = Math.max(
+    ...['。', '！', '？', '.', '!', '?', '；', ';', '，', ',', '、', ' '].map(char => prefix.lastIndexOf(char)),
+  )
+  const summary = lastBoundary >= Math.floor(prefix.length * 0.75)
+    ? prefix.slice(0, lastBoundary + (prefix[lastBoundary] === ' ' ? 0 : 1)).trimEnd()
+    : prefix
+  return `${summary}…`
+}
+
+function toSkillSummary(description: string, whenToUse: string | undefined, name: string, maxChars: number): string {
+  const meaningful = (value: string): boolean => value.replace(/[|\s\-—–_·•]+/g, '').trim().length > 0
+  if (meaningful(description)) return toSummary(description, maxChars)
+  if (whenToUse !== undefined && meaningful(whenToUse)) return toSummary(whenToUse, maxChars)
+  return toSummary(`Skill: ${name.replace(/[-_]+/g, ' ')}`, maxChars)
+}
+
+/** Keyword score over the displayed search summary and identity fields. */
+function keywordScore(record: CapabilityRecord, tokens: readonly string[]): number {
+  const haystack = [
+    record.name,
+    record.summary,
+    record.origin.provider,
+    ...record.tags,
+  ].join(' ').toLowerCase()
+  let score = 0
+  for (const token of tokens) {
+    if (token.length === 0) continue
+    if (haystack.includes(token)) score += 1
+    // Substring hits on the identifier are stronger (exact id match handled separately).
+    if (record.id.toLowerCase().includes(token)) score += 1.5
+  }
+  return score
+}
+
+function successRate(stats: CapabilityStats): number | undefined {
+  if (stats.uses === 0) return undefined
+  return stats.successes / stats.uses
+}
+
+/** Build the registry plugin. */
+export const name = 'capability-menu-registry'
+export const inject = ['tools', 'skills']
+
+export async function apply(ctx: Context, config: Config = {}): Promise<void> {
+  const configuredSummaryMaxChars = config.summaryMaxChars ?? 320
+  let summaryMaxChars = configuredSummaryMaxChars
+  const detailIncludesBody = config.detailIncludesBody ?? false
+  const maxResults = config.maxResults ?? 20
+  const weighting = config.weighting ?? 0.1
+  const dshHome = process.env['DSH_HOME']?.trim()
+  const stateFile = (config.stateFile ?? join(dshHome || join(homedir(), '.dsh'), 'capability-menu-policy.json')).trim()
+  const legacySearchFile = stateFile.length > 0 ? join(dirname(stateFile), 'capability-menu-search-metadata.json') : ''
+  const searchSettingsEnabled = stateFile.length > 0
+  const refreshDebounceMs = config.refreshDebounceMs ?? 200
+  assertPositiveInteger('summaryMaxChars', summaryMaxChars, 20)
+  assertPositiveInteger('maxResults', maxResults, 1)
+  assertPositiveInteger('refreshDebounceMs', refreshDebounceMs, 0)
+  assertWeight('weighting', weighting)
+
+  /** Tool records keyed by tool name (MCP tools plus native tools under `built-in`); skills keyed by bare skill name. */
+  let toolRecords = new Map<string, CapabilityRecord>()
+  let skillRecords = new Map<string, CapabilityRecord>()
+  /** The scope each indexed skill was collected from; undefined = global layer. */
+  let skillScopes = new Map<string, ScopeKey | undefined>()
+  /** The project cwd used to discover an indexed skill, when applicable. */
+  let skillCwds = new Map<string, string | undefined>()
+  let unavailableSkills: CapabilityDiagnostics['unavailableSkills'] = []
+  let shadowedSkills: CapabilityDiagnostics['shadowedSkills'] = []
+  let brokenPresets: CapabilityDiagnostics['brokenPresets'] = []
+  let undocumentedSkills: CapabilityDiagnostics['undocumentedSkills'] = []
+  const metadata = new Map<string, string>()
+  const metadataKey = (kind: CapabilityKind, id: string): string => `${kind}:${id}`
+  if (searchSettingsEnabled) {
+    try {
+      await migrateLegacySearchState(stateFile, legacySearchFile)
+    } catch (error) {
+      ctx.logger.warn(`capability-registry: legacy search migration failed (${legacySearchFile}): ${String(error)}`)
+    }
+    try {
+      const saved = (await readMenuState(stateFile)).search
+      if (saved.summaryMaxChars !== undefined) {
+        summaryMaxChars = saved.summaryMaxChars
+      }
+      for (const [key, description] of saved.descriptions) metadata.set(key, description)
+    } catch (error) {
+      ctx.logger.warn(`capability-registry: menu state read failed (${stateFile}): ${String(error)}`)
+    }
+  }
+  let metadataWrite = Promise.resolve()
+  const overrideOf = (record: CapabilityRecord): string | undefined => {
+    const value = metadata.get(metadataKey(record.kind, record.id))
+    return value === record.summary ? undefined : value
+  }
+  const effectiveRecord = (record: CapabilityRecord): CapabilityRecord => {
+    const override = overrideOf(record)
+    return override === undefined ? record : { ...record, summary: override }
+  }
+
+  const statsOf = (record: CapabilityRecord): CapabilityStats => record.stats
+
+  /**
+   * Kind-aware record lookup. With `kind` only that table is consulted; without
+   * it a name present in BOTH tables is ambiguous and resolves to undefined
+   * (never silently pick one kind over the other).
+   */
+  const resolveRecord = (key: string, kind?: CapabilityKind): CapabilityRecord | undefined => {
+    if (kind === 'tool') return toolRecords.get(key)
+    if (kind === 'skill') return skillRecords.get(key)
+    const tool = toolRecords.get(key)
+    const skill = skillRecords.get(key)
+    if (tool !== undefined && skill !== undefined) return undefined
+    return tool ?? skill
+  }
+
+  /**
+   * Resolve a skill's root directory from the live skill registry. The
+   * directory comes from the skill provider's own locator (`resourceBase` for
+   * bundle skills, the SKILL.md parent for flat files) — never from caller input.
+   */
+  const skillRootOf = async (id: string): Promise<string | undefined> => {
+    const name = id
+    const scope = skillScopes.get(name)
+    const cwd = skillCwds.get(name)
+    const lookup = { scope, cwd }
+    const definition = await ctx.skills.get(name, lookup).catch(() => undefined)
+    if (definition !== undefined) {
+      if (definition.resourceBase !== undefined && definition.resourceBase.kind === 'directory') {
+        return definition.resourceBase.path
+      }
+      if (definition.path !== undefined) return dirname(definition.path)
+    }
+    return undefined
+  }
+
+  /**
+   * Index one visible tool schema into `next`, the accumulator owned by the
+   * current rebuild pass, deduped by name.
+   * 全部可见工具都进编目，仅排除 meta_search/meta_invoke（本插件控制面，
+   * 恒常驻）与 run_code（Code Mode 保留传输层）。mcp__ 工具按真实 server
+   * 分组；原生工具（无 mcp__ 前缀）统一归入保留的 built-in server，使能力
+   * 菜单能统一按 server 分组、三档管理，meta_invoke 也能派发它们。
+   * A schema may surface from several preset scope views; the first wins.
+   */
+  const indexToolSchema = (
+    next: Map<string, CapabilityRecord>,
+    schema: { name: string; description: string; parameters: JsonSchemaNode },
+  ): void => {
+    if (CATALOG_EXCLUDED_TOOLS.has(schema.name)) return
+    if (next.has(schema.name)) return
+    const existing = toolRecords.get(schema.name)
+    const stats = existing?.stats ?? { uses: 0, successes: 0, failures: 0, totalMs: 0 }
+    const isMcp = schema.name.startsWith(MCP_ID_PREFIX)
+    const serverName = isMcp ? serverNameOf(schema.name) : BUILT_IN_SERVER
+    next.set(schema.name, {
+      id: schema.name,
+      kind: 'tool',
+      actions: ['execute'],
+      name: schema.name,
+      description: schema.description,
+      origin: { provider: serverName, serverName },
+      parameters: schema.parameters as JsonSchemaNode,
+      invocation: { modelInvocable: true, userInvocable: false },
+      tags: [serverName, 'tool'],
+      stats,
+      summary: toSummary(schema.description, summaryMaxChars),
+    })
+  }
+
+  /**
+   * Rebuild the tool index from the visible tool registries.
+   *
+   * Index the global view, every mountable preset's standing scope, and live
+   * agent scopes. The final pass catches tools registered for one session.
+   */
+  // Rebuilds can overlap (eager mount-time run vs. a change-event refresh);
+  // the epoch guard drops a superseded run so its older snapshot never
+  // clobbers a newer one. The accumulator is local to each run for the same
+  // reason: a shared one would be reset by the newer run mid-flight, letting
+  // the older run publish a partial catalog when it wins the epoch check.
+  let toolIndexEpoch = 0
+  // Remember which optional agent-preset service instance the registry has
+  // already observed. Cordis may invoke an inject callback after another path
+  // (such as an explicit refresh) has already enumerated the same instance;
+  // scheduling again would trigger a redundant full scan on policy-only edits.
+  let observedAgentPresets: AgentPresetScopes | undefined
+  let observedAgents: LiveAgentRegistry | undefined
+  const rebuildTools = async (): Promise<void> => {
+    const epoch = ++toolIndexEpoch
+    const nextToolRecords = new Map<string, CapabilityRecord>()
+    for (const schema of ctx.tools.schemas()) indexToolSchema(nextToolRecords, schema)
+
+    const agentPresets = (ctx.get as (key: string) => unknown)('agentPresets') as AgentPresetScopes | undefined
+    if (agentPresets !== undefined) {
+      observedAgentPresets = agentPresets
+      let presets: Array<{ id: string; broken?: string }> = []
+      try {
+        presets = await agentPresets.list()
+      } catch (error) {
+        ctx.logger.warn(`meta-registry: agent-presets enumeration failed: ${String(error)}`)
+      }
+      for (const preset of presets) {
+        if (preset.broken !== undefined) continue
+        try {
+          await withAgentPresetScope(agentPresets, preset.id, scope => {
+            for (const schema of ctx.tools.schemas(scope)) indexToolSchema(nextToolRecords, schema)
+          })
+        } catch (error) {
+          ctx.logger.warn(`meta-registry: preset "${preset.id}" tool scope unavailable: ${String(error)}`)
+        }
+      }
+    }
+    const agents = (ctx.get as (key: string) => unknown)('agents') as LiveAgentRegistry | undefined
+    if (agents !== undefined) {
+      observedAgents = agents
+      for (const agent of agents.list()) {
+        try {
+          for (const schema of ctx.tools.schemas(agent)) indexToolSchema(nextToolRecords, schema)
+        } catch (error) {
+          ctx.logger.warn(`meta-registry: agent "${agent.id}" tool scope unavailable: ${String(error)}`)
+        }
+      }
+    }
+    if (epoch === toolIndexEpoch) toolRecords = nextToolRecords
+  }
+
+  /**
+   * Rebuild the skill index asynchronously; resolves when the refresh completes.
+   *
+   * Skills live in a per-scope registry. Enumerate global and standing preset
+   * scopes, then live agent scopes with their session cwd. The last pass is
+   * required for project roots and skills registered only for one session.
+   *
+   * Each skill records the preset it came from (see `CapabilityOrigin.preset`),
+   * which is the only way to tell a preset's own `customSkillDirs` apart from a
+   * user's: both are labelled `source: 'custom'`.
+   *
+   * Same-name rule: the global layer wins, then presets in enumeration order
+   * (first wins). A skill id is a bare name with no namespace, so two scopes
+   * declaring the same name can only yield one record; overwriting instead
+   * would make the catalog depend on scan order rather than on where the skill
+   * actually sits.
+   *
+   * Same epoch guard as the tool side: overlapping refreshes resolve out of
+   * order, and a stale snapshot must not overwrite a newer one.
+   */
+  let skillIndexEpoch = 0
+  const refreshSkills = async (): Promise<void> => {
+    const epoch = ++skillIndexEpoch
+    const nextSkills = new Map<string, CapabilityRecord>()
+    const nextSkillScopes = new Map<string, ScopeKey | undefined>()
+    const nextSkillCwds = new Map<string, string | undefined>()
+    const nextUnavailable = new Map<string, { name: string; source: string; preset?: string }>()
+    const nextShadowed = new Map<string, { name: string; selectedFrom: string; shadowedFrom: string }>()
+    const nextBroken = new Map<string, { id: string; reason: string }>()
+    const nextUndocumented = new Map<string, { name: string; summary: string }>()
+
+    const indexSkill = (skill: SkillSummary, scope: ScopeKey | undefined, preset?: string, cwd?: string): void => {
+      const id = skill.name
+      const descriptionIsPlaceholder = skill.description.replace(/[|\s\-—–_·•]+/g, '').trim().length === 0
+      if (descriptionIsPlaceholder) nextUndocumented.set(`${preset ?? 'global'}\0${id}`, { name: id, summary: toSkillSummary(skill.description, skill.whenToUse, id, summaryMaxChars) })
+      if (!isModelInvocable(skill)) {
+        nextUnavailable.set(`${preset ?? 'global'}\0${id}`, { name: id, source: skill.provider, ...(preset !== undefined ? { preset } : {}) })
+        return
+      }
+      // First wins (global layer, then presets in order): see the same-name
+      // rule in this function's doc comment.
+      if (nextSkills.has(id)) {
+        const winner = nextSkills.get(id)!
+        const candidatePath = skill.resourceBase?.kind === 'directory' ? skill.resourceBase.path : undefined
+        if (winner.origin.provider === skill.provider && winner.origin.path === candidatePath) return
+        nextShadowed.set(`${preset ?? 'global'}\0${id}`, {
+          name: id,
+          selectedFrom: winner.origin.preset ?? 'global',
+          shadowedFrom: preset ?? 'global',
+        })
+        return
+      }
+      const existing = skillRecords.get(id)
+      const stats = existing?.stats ?? { uses: 0, successes: 0, failures: 0, totalMs: 0 }
+      nextSkills.set(id, {
+        id,
+        kind: 'skill',
+        actions: ['load'],
+        name: skill.name,
+        description: skill.description,
+        ...skill.whenToUse !== undefined ? { whenToUse: skill.whenToUse } : {},
+        origin: {
+          provider: skill.provider,
+          ...typeof skill.source === 'string' ? { source: skill.source } : {},
+          ...preset !== undefined ? { preset } : {},
+          // The skill's own directory, when its provider has one. It is what lets
+          // the location manager address project-scoped skills for edit/remove.
+          ...skill.resourceBase?.kind === 'directory' ? { path: skill.resourceBase.path } : {},
+        },
+        parameters: { type: 'object', properties: {}, additionalProperties: false },
+        invocation: { modelInvocable: skill.invocation.modelInvocable, userInvocable: skill.invocation.userInvocable },
+        tags: [skill.provider, 'skill'],
+        stats,
+        summary: toSkillSummary(skill.description, skill.whenToUse, id, summaryMaxChars),
+      })
+      nextSkillScopes.set(id, scope)
+      nextSkillCwds.set(id, cwd)
+    }
+
+    const collectScoped = async (label: string, scope: ScopeKey | undefined, preset?: string, cwd?: string): Promise<void> => {
+      let skills: SkillSummary[] = []
+      try {
+        skills = await ctx.skills.list({ scope, cwd })
+      } catch (error) {
+        ctx.logger.warn(`meta-registry: skill catalog refresh failed for ${label}: ${String(error)}`)
+        return
+      }
+      for (const skill of skills) indexSkill(skill, scope, preset, cwd)
+    }
+
+    // Global layer first: the host's own skill providers.
+    await collectScoped('global', undefined)
+
+    // Preset layers: agent presets mount skill providers into their own scope
+    // (web surface disables the host-plane rows by design). `agentPresets` is
+    // optional — headless bundles can still index global and live-agent skills.
+    const agentPresets = (ctx.get as (key: string) => unknown)('agentPresets') as AgentPresetScopes | undefined
+    if (agentPresets !== undefined) {
+      let presets: Array<{ id: string; broken?: string }> = []
+      try {
+        presets = await agentPresets.list()
+      } catch (error) {
+        ctx.logger.warn(`meta-registry: agent-presets enumeration failed: ${String(error)}`)
+      }
+      for (const preset of presets) {
+        if (preset.broken !== undefined) {
+          nextBroken.set(preset.id, { id: preset.id, reason: preset.broken })
+          continue
+        }
+        try {
+          await withAgentPresetScope(agentPresets, preset.id, scope =>
+            collectScoped(`preset "${preset.id}"`, scope, preset.id))
+        } catch (error) {
+          nextBroken.set(preset.id, { id: preset.id, reason: String(error) })
+          ctx.logger.warn(`meta-registry: preset "${preset.id}" skill scope unavailable: ${String(error)}`)
+        }
+      }
+    }
+
+    // The filesystem provider only discovers project roots when given the
+    // session cwd. Active agent scopes also carry tools/skills registered for
+    // one session rather than for the standing preset.
+    const agents = (ctx.get as (key: string) => unknown)('agents') as LiveAgentRegistry | undefined
+    if (agents !== undefined) {
+      observedAgents = agents
+      for (const agent of agents.list()) {
+        await collectScoped(`agent "${agent.id}"`, agent, undefined, agent.session.header.cwd)
+      }
+    }
+
+    if (epoch !== skillIndexEpoch) return
+    skillRecords = nextSkills
+    skillScopes = nextSkillScopes
+    skillCwds = nextSkillCwds
+    unavailableSkills = [...nextUnavailable.values()]
+    shadowedSkills = [...nextShadowed.values()]
+    brokenPresets = [...nextBroken.values()]
+    undocumentedSkills = [...nextUndocumented.values()]
+  }
+
+  // --- Refresh scheduling --------------------------------------------------
+  // Change events (`tools/change` / `skills/change`) arrive in bursts: the
+  // skill/preset lifecycle invalidates caches and re-registers providers in
+  // quick succession, and a rebuild's own registry access can emit further
+  // change events. Rebuilding once per event produced an unbounded CPU storm
+  // (a full preset re-scan per event), so the scheduler:
+  //   1. runs at most one rebuild at a time (single flight);
+  //   2. coalesces every event landing during a run into at most one
+  //      debounced follow-up rebuild;
+  //   3. lets an explicit `refresh()` await the rebuild chain covering its own
+  //      call, so callers never observe a stale (or empty) catalog.
+  // The epoch guards inside `rebuildTools`/`refreshSkills` stay as the last
+  // line of defence for concurrent correctness.
+  /** Monotonic count of rebuild requests received (events + explicit calls). */
+  let eventSeq = 0
+  /** The `eventSeq` value fully applied by the last completed rebuild. */
+  let appliedSeq = 0
+  let rebuilding = false
+  let stopped = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const waiters: Array<{ seq: number; resolve: () => void }> = []
+
+  /** Resolve every waiter whose snapshot is already covered by `appliedSeq`. */
+  const settleWaiters = (): void => {
+    if (waiters.length === 0) return
+    const ready = waiters.filter(waiter => waiter.seq <= appliedSeq)
+    if (ready.length === 0) return
+    for (const waiter of ready) waiters.splice(waiters.indexOf(waiter), 1)
+    for (const waiter of ready) waiter.resolve()
+  }
+
+  /**
+   * Consecutive rebuilds that reproduced the previous catalog. A noisy event
+   * stream that never changes anything (session re-registrations, the skill
+   * watcher) would otherwise keep the scheduler at the debounce rate, and each
+   * rebuild re-enumerates every preset's tools and skills — measured at ~1.5s
+   * CPU each, enough to starve the event loop and stall unrelated UI calls.
+   */
+  let idleStreak = 0
+  /** Upper bound for the backoff, so a real change is never pending long. */
+  const BACKOFF_MAX_MS = 10_000
+  const currentDelay = (): number => {
+    // The ceiling can never fall below the configured base, or a large
+    // `refreshDebounceMs` would be clamped *down* into a faster schedule.
+    const ceiling = Math.max(BACKOFF_MAX_MS, refreshDebounceMs)
+    return Math.min(refreshDebounceMs * 2 ** idleStreak, ceiling)
+  }
+
+  /** Queue a coalesced rebuild after the (possibly backed-off) window. */
+  const schedule = (): void => {
+    if (stopped || rebuilding || timer !== undefined) return
+    timer = setTimeout(() => {
+      timer = undefined
+      if (stopped || rebuilding) return
+      void runRebuild()
+    }, currentDelay())
+  }
+
+  /**
+   * Fingerprint of the indexed catalog — capability ids only, order-insensitive.
+   * Used to tell a rebuild that found something new from one that merely
+   * reproduced the previous catalog.
+   */
+  const catalogSignature = (): string => {
+    const ids: string[] = []
+    for (const id of toolRecords.keys()) ids.push(`t:${id}`)
+    for (const id of skillRecords.keys()) ids.push(`s:${id}`)
+    ids.sort()
+    return ids.join('\u0000')
+  }
+  let lastSignature: string | undefined
+  /** Consecutive follow-up runs that reproduced the previous catalog. */
+  let unchangedChain = 0
+
+  /** One full rebuild; never rejects (a failed run must not hang waiters). */
+  const runRebuild = async (): Promise<void> => {
+    rebuilding = true
+    // Every request received so far is covered by this run.
+    const seqAtStart = eventSeq
+    const startedAt = Date.now()
+    try {
+      await rebuildTools()
+      await refreshSkills()
+    } catch (error) {
+      ctx.logger.warn(`capability-registry: catalog rebuild failed: ${String(error)}`)
+    } finally {
+      rebuilding = false
+      if (seqAtStart > appliedSeq) appliedSeq = seqAtStart
+      settleWaiters()
+
+      // Requests that landed mid-run are not covered yet, so chain a
+      // follow-up — but never indefinitely. Two runs in a row that reproduce
+      // the same catalog mean the pending events carried no new capability:
+      // our own registry reads can emit change events, and dsh's skill watcher
+      // can stream them, so chaining on would spin at the debounce rate
+      // forever. One follow-up is still allowed before stopping, because a
+      // real change that lands mid-run is only visible to the *next* run.
+      const signature = catalogSignature()
+      const changed = signature !== lastSignature
+      lastSignature = signature
+      // One line per full rebuild. These are the expensive runs (every tool plus
+      // every agent-preset skill scope); if they are repeating, this is where it
+      // shows — and a caller blocked behind one sees that as the UI stalling.
+      ctx.logger.info(
+        `capability-registry: rebuild took ${Date.now() - startedAt}ms (catalog changed: ${changed}, ${toolRecords.size} tools, ${skillRecords.size} skills)`,
+      )
+      if (changed) idleStreak = 0
+      else if (idleStreak < 10) idleStreak += 1
+      if (!stopped && eventSeq > appliedSeq) {
+        if (changed) {
+          unchangedChain = 0
+          schedule()
+        } else if (unchangedChain === 0) {
+          unchangedChain = 1
+          schedule()
+        }
+      }
+    }
+  }
+
+  /** Start a rebuild immediately, skipping the debounce window. */
+  const runNow = (): void => {
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      timer = undefined
+    }
+    if (!stopped && !rebuilding) void runRebuild()
+  }
+
+  // The registry is also used in bundles without agent presets, so this is
+  // intentionally an optional dependency. In the web host, however, the
+  // capability plugin can mount before the preset service. Its first pass then
+  // sees only global tools (which may be non-empty) and the later preset mounts
+  // do not necessarily emit tools/change from this scope. Re-run the complete
+  // inventory when agentPresets becomes available or is replaced; rebuildTools
+  // will enumerate every healthy standing preset scope, independent of which
+  // preset is the default for new sessions.
+  ctx.inject(['agentPresets'], () => {
+    const agentPresets = (ctx.get as (key: string) => unknown)('agentPresets') as AgentPresetScopes | undefined
+    if (agentPresets === undefined || agentPresets === observedAgentPresets) return
+    observedAgentPresets = agentPresets
+    eventSeq++
+    schedule()
+  })
+  ctx.inject(['agents'], () => {
+    const agents = (ctx.get as (key: string) => unknown)('agents') as LiveAgentRegistry | undefined
+    if (agents === undefined || agents === observedAgents) return
+    observedAgents = agents
+    eventSeq++
+    schedule()
+  })
+
+  /**
+   * Refresh the whole catalog, resolving once the rebuild chain covering this
+   * call has converged (including any coalesced follow-up).
+   */
+  const refresh = async (): Promise<void> => {
+    if (stopped) return
+    const seq = ++eventSeq
+    runNow()
+    if (seq <= appliedSeq) return
+    await new Promise<void>(resolve => {
+      waiters.push({ seq, resolve })
+    })
+  }
+
+  /** Register once; also subscribe to change events. */
+  const disposers: Array<() => void> = []
+  disposers.push(ctx.on('tools/change', () => {
+    eventSeq++
+    schedule()
+  }))
+  disposers.push(ctx.on('skills/change', () => {
+    eventSeq++
+    schedule()
+  }))
+  disposers.push(ctx.on('agent/created', () => {
+    eventSeq++
+    schedule()
+  }))
+  disposers.push(ctx.on('agent/disposed', () => {
+    eventSeq++
+    schedule()
+  }))
+  // Index the global tool view eagerly. The first explicit refresh enumerates
+  // preset standing scopes; the optional-service injection above also triggers
+  // a full pass if agentPresets is mounted after this plugin.
+  void rebuildTools()
+  void refreshSkills()
+  ctx.effect(() => () => {
+    stopped = true
+    if (timer !== undefined) clearTimeout(timer)
+    // Unblock any in-flight `refresh()`: the plugin is going away and no
+    // further rebuild will run.
+    for (const waiter of waiters.splice(0)) waiter.resolve()
+    for (const dispose of disposers) dispose()
+  })
+
+  const service: CapabilityService = {
+    search(options: MetaSearchOptions = {}): CapabilitySummary[] {
+      const kind = options.kind ?? 'all'
+      const server = options.server
+      const tag = options.tag
+      const query = options.query?.trim()
+      const id = options.id?.trim()
+
+      const all: CapabilityRecord[] = []
+      // Index/source is the GLOBAL registry — no visibility filter here.
+      // Resident/On-demand is a projection-layer concern (`dsh-capability-policy`),
+      // so an On-demand tool hidden from the model's exposure surface must still
+      // be searchable so `meta_search` can return it for `meta_invoke`. Disabled
+      // enforcement lives at the model-facing tools (meta_search/meta_invoke),
+      // keeping the management surface able to list Disabled capabilities.
+      if (kind === 'all' || kind === 'tool') {
+        for (const record of toolRecords.values()) all.push(record)
+      }
+      if (kind === 'all' || kind === 'skill') {
+        for (const record of skillRecords.values()) all.push(record)
+      }
+
+      const filtered = all.filter(record => {
+        if (server !== undefined && record.origin.serverName !== server) return false
+        if (tag !== undefined && !record.tags.includes(tag)) return false
+        if (id !== undefined && record.id !== id) return false
+        return true
+      })
+
+      // Match before ranking so usage history cannot surface an unrelated result.
+      // An empty query deliberately browses the full catalog.
+      const tokens = (query ?? '').toLowerCase().split(/\s+/).filter(Boolean)
+      const matched = filtered.map(source => {
+        const record = effectiveRecord(source)
+        let matchScore = 0
+        if (query !== undefined && query.length > 0) {
+          const exact = record.id === query || record.name === query
+          if (exact) matchScore += 100
+          matchScore += keywordScore(record, tokens)
+        }
+        return { record, matchScore }
+      }).filter(({ matchScore }) => query === undefined || query.length === 0 || matchScore > 0)
+
+      const ranked = matched.map(({ record, matchScore }) => {
+        let score = matchScore
+        const rate = successRate(record.stats)
+        if (rate !== undefined && weighting > 0) score += rate * weighting * 10
+        if (record.stats.uses > 0 && weighting > 0) score += Math.min(record.stats.uses, 100) * weighting * 0.01
+        return { record, score }
+      }).sort((a, b) => b.score - a.score || a.record.id.localeCompare(b.record.id))
+
+      const limit = Math.max(1, options.maxResults ?? maxResults)
+      const offset = options.offset ?? 0
+      if (!Number.isInteger(offset) || offset < 0) throw new Error('offset must be a non-negative integer')
+      return ranked.slice(offset, offset + limit).map(({ record }) => {
+        const rate = successRate(record.stats)
+        return {
+          id: record.id,
+          kind: record.kind,
+          name: record.name,
+          summary: record.summary,
+          ...record.origin.serverName !== undefined ? { server: record.origin.serverName } : {},
+          ...record.origin.source !== undefined ? { source: record.origin.source } : {},
+          ...record.origin.preset !== undefined ? { preset: record.origin.preset } : {},
+          ...record.origin.path !== undefined ? { path: record.origin.path } : {},
+          tags: record.tags,
+          ...rate !== undefined ? { success_rate: rate } : {},
+          uses: record.stats.uses,
+        }
+      })
+    },
+
+    get(id: string, kind?: CapabilityKind): CapabilityRecord | undefined {
+      const record = resolveRecord(id.trim(), kind)
+      return record === undefined ? undefined : effectiveRecord(record)
+    },
+
+    getSearchMetadata(id: string, kind: CapabilityKind): SearchMetadata | undefined {
+      const record = resolveRecord(id.trim(), kind)
+      if (record === undefined) return undefined
+      const override = overrideOf(record)
+      return {
+        id: record.id,
+        kind: record.kind,
+        defaultDescription: record.summary,
+        ...override !== undefined ? { description: override } : {},
+        maxChars: summaryMaxChars,
+      }
+    },
+
+    summaryMaxChars(): number {
+      return summaryMaxChars
+    },
+
+    searchSettingsEnabled(): boolean {
+      return searchSettingsEnabled
+    },
+
+    async updateSummaryMaxChars(value: number): Promise<void> {
+      assertPositiveInteger('summaryMaxChars', value, 20)
+      if (!Number.isSafeInteger(value)) throw new Error('summaryMaxChars must be a safe integer')
+      if (!searchSettingsEnabled) throw new Error('检索信息存储未启用')
+      const commit = metadataWrite.then(async () => {
+        const tooLong = [...metadata].find(([, description]) => description.length > value)
+        if (tooLong !== undefined) {
+          throw new Error(`已有检索描述超过 ${value} 个字符：${tooLong[0]}；请先缩短该描述`)
+        }
+        if (value === summaryMaxChars) return
+        await writeSearchState(stateFile, { summaryMaxChars: value })
+        summaryMaxChars = value
+        await refresh()
+      })
+      metadataWrite = commit.then(() => undefined, () => undefined)
+      await commit
+    },
+
+    async updateSearchMetadata(input: SearchMetadataUpdate): Promise<void> {
+      const record = resolveRecord(input.id.trim(), input.kind)
+      if (record === undefined) throw new Error('能力不存在，无法修改检索描述')
+      if (!searchSettingsEnabled) throw new Error('检索描述存储未启用')
+      const description = input.description.replace(/\s+/g, ' ').trim()
+      const key = metadataKey(input.kind, record.id)
+      const commit = metadataWrite.then(async () => {
+        if (description.length > summaryMaxChars) throw new Error(`检索描述不能超过 ${summaryMaxChars} 个字符`)
+        const next = new Map(metadata)
+        const defaultDescription = record.kind === 'tool'
+          ? toSummary(record.description, summaryMaxChars)
+          : toSkillSummary(record.description, record.whenToUse, record.name, summaryMaxChars)
+        if (description.length === 0 || description === defaultDescription) next.delete(key)
+        else next.set(key, description)
+        await writeSearchState(stateFile, {
+          description: { key, ...next.has(key) ? { value: next.get(key) } : {} },
+        })
+        metadata.clear()
+        for (const [savedKey, value] of next) metadata.set(savedKey, value)
+      })
+      metadataWrite = commit.then(() => undefined, () => undefined)
+      await commit
+    },
+
+    async getDetail(id: string, kind?: CapabilityKind, context: MetaLookupContext = {}): Promise<CapabilityDetail | undefined> {
+      const source = resolveRecord(id.trim(), kind)
+      const record = source === undefined ? undefined : effectiveRecord(source)
+      if (record === undefined) return undefined
+
+      if (record.kind === 'tool') {
+        const definition = ctx.tools.get(record.name, context.scope)
+        if (definition === undefined) return undefined
+        return {
+          id: record.id,
+          kind: 'tool',
+          actions: record.actions,
+          name: record.name,
+          description: definition.description,
+          parameters: definition.parameters as JsonSchemaNode,
+          output: definition.output.schema,
+          origin: record.origin,
+          tags: record.tags,
+          stats: statsOf(record),
+        }
+      }
+
+      // Skill: resolve the body if configured.
+      const lookup = {
+        cwd: context.cwd,
+        signal: context.signal,
+        scope: context.scope,
+      }
+      const skill = await ctx.skills.get(record.name, lookup).catch(() => undefined)
+      const detail: CapabilityDetail = {
+        id: record.id,
+        kind: 'skill',
+        actions: record.actions,
+        name: record.name,
+        description: record.description,
+        ...record.whenToUse !== undefined ? { whenToUse: record.whenToUse } : {},
+        parameters: record.parameters,
+        origin: record.origin,
+        tags: record.tags,
+        stats: statsOf(record),
+      }
+      if (skill !== undefined && detailIncludesBody) {
+        return { ...detail, output: { type: 'object', properties: { content: { type: 'string' } } } as JsonSchemaNode }
+      }
+      return detail
+    },
+
+    async listSkillDir(id: string, relPath = ''): Promise<SkillDirEntry[] | undefined> {
+      const root = await skillRootOf(id)
+      if (root === undefined) return undefined
+      const target = relPath.length === 0 ? root : resolve(root, relPath)
+      // Containment: the resolved path must stay inside the skill root, both
+      // lexically (`..`) and after resolving symlinks (a link inside the skill
+      // directory must not lead out of it).
+      if (!(await isInside(root, target))) return undefined
+      try {
+        const entries = await readdir(target, { withFileTypes: true })
+        return entries.map(entry => ({
+          name: entry.name,
+          type: entry.isDirectory() ? 'directory' : 'file',
+        }))
+      } catch (error) {
+        ctx.logger.warn(`meta-registry: skill dir listing failed for "${id}" at ${target}: ${String(error)}`)
+        return undefined
+      }
+    },
+
+    async readSkillFile(id: string, relPath: string): Promise<string | undefined> {
+      const root = await skillRootOf(id)
+      if (root === undefined) return undefined
+      const target = resolve(root, relPath)
+      // Containment: see `listSkillDir` — lexical `..` and symlinks both checked.
+      if (!(await isInside(root, target))) return undefined
+      try {
+        const info = await stat(target)
+        if (!info.isFile()) return undefined
+        const text = await readFile(target, 'utf8')
+        // NUL marks binary content; do not surface it as a text preview.
+        return text.includes('\0') ? undefined : text
+      } catch (error) {
+        ctx.logger.warn(`meta-registry: skill file read failed for "${id}" at ${target}: ${String(error)}`)
+        return undefined
+      }
+    },
+
+    skillDirs(): ReadonlyArray<{ readonly name: string; readonly skillDir: string; readonly source?: string }> {
+      const out: Array<{ name: string; skillDir: string; source?: string }> = []
+      for (const record of skillRecords.values()) {
+        const skillDir = record.origin.path
+        if (skillDir === undefined) continue
+        out.push({
+          name: record.name,
+          skillDir,
+          ...record.origin.source !== undefined ? { source: record.origin.source } : {},
+        })
+      }
+      return out
+    },
+
+    diagnostics(): CapabilityDiagnostics {
+      const policy = ctx.get('capabilityPolicy')
+      const count = policy === undefined ? 0 : this.search({ maxResults: Number.MAX_SAFE_INTEGER })
+        .filter(record => policy.classifyCapability(record.id, record.kind) === 'on-demand').length
+      return {
+        unavailableSkills,
+        shadowedSkills,
+        brokenPresets,
+        undocumentedSkills,
+        unbrowseableSkills: [...skillRecords.values()]
+          .filter(record => record.origin.path === undefined)
+          .map(record => ({ name: record.name, reason: '技能提供方没有可浏览的目录路径' })),
+        catalog: { state: count === 0 ? 'empty' : 'ready', count },
+      }
+    },
+
+    size(): number {
+      return toolRecords.size + skillRecords.size
+    },
+
+    version(): number {
+      return appliedSeq
+    },
+
+    refresh(): Promise<void> {
+      return refresh()
+    },
+
+    requestRefresh(): void {
+      if (stopped) return
+      eventSeq++
+      schedule()
+    },
+
+  }
+
+  // Observe tool results to write back objective stats. Nested dispatches
+  // (parent set by meta_invoke) attribute to the target capability; the
+  // meta_invoke wrapper itself records nothing for any capability.
+  ctx.on('tools/result', (exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) => {
+    const name = exec.name
+    const record = toolRecords.get(name)
+    if (record === undefined) return
+    // Nested dispatches (a meta_invoke call or a native-tool forward) carry the
+    // target tool's own name, so stats always attribute to the target capability.
+    const durationMs = result.meta !== undefined && typeof result.meta === 'object'
+      && result.meta !== null && 'durationMs' in result.meta
+      ? (result.meta as { durationMs?: unknown }).durationMs as number | undefined
+      : undefined
+    const base = statsOf(record)
+    const next: CapabilityStats = {
+      uses: base.uses + 1,
+      successes: base.successes + (result.isError ? 0 : 1),
+      failures: base.failures + (result.isError ? 1 : 0),
+      totalMs: base.totalMs + (typeof durationMs === 'number' && Number.isFinite(durationMs) ? durationMs : 0),
+      lastUsedAt: Date.now(),
+    }
+    toolRecords.set(name, { ...record, stats: next })
+  })
+
+  ctx.provide('capability', service)
+}
+
+/** Derive the server namespace from an `mcp__<server>__<raw>` name. */
+export function serverNameOf(publicName: string): string {
+  const rest = publicName.startsWith(MCP_ID_PREFIX) ? publicName.slice(MCP_ID_PREFIX.length) : publicName
+  const index = rest.indexOf('__')
+  return index === -1 ? rest : rest.slice(0, index)
+}

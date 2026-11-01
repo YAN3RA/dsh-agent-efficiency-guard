@@ -1,0 +1,55 @@
+/**
+ * @daweifu/capability-menu — consolidated plugin package (server + browser).
+ *
+ * One installable source package exposing:
+ *
+ * - four cordis plugin factories via subpath exports (`/registry`, `/search`,
+ *   `/invoke`, `/policy`), mounted by the bundle patch as separate entries:
+ *   - `registry` (P0): capability catalog + `ctx.capability` service (no model tool).
+ *   - `search`   (P1): registers `meta_search`.
+ *   - `invoke`   (P2): registers `meta_invoke`.
+ *   - `policy`   (P3): Resident/On-demand/Disabled projection policy + `ctx.capabilityPolicy`.
+ * - the package root entry (`name` + `apply` below): mounts the Typert gateway
+ *   that exposes `ctx.capabilityPolicy` to the browser as the `capabilityPolicy`
+ *   remote namespace — the data source of the 能力菜单 settings tab.
+ * - a browser bundle via the `./client` subpath (`src/client`), discovered by
+ *   `@deepseek-ai/dsh-client-modules` from this package's `dsh.client`
+ *   declaration and served as `/plugins/<id>/client.js`.
+ *
+ * NOTE: this module deliberately re-exports nothing from the subpath plugins
+ * (not even types — those live at `/registry`, `/search`, `/invoke`, `/policy`).
+ * Re-exporting would either pollute the root entry's plugin identity with the
+ * sub-plugins' `name`/`apply`/`inject`, or trigger ambiguous-type re-exports
+ * (each subpath exports its own `Config` interface).
+ *
+ * @module @daweifu/capability-menu
+ */
+
+import type { Context } from '@deepseek-ai/cordis'
+import { CapabilityPolicyGateway } from './server/remote.ts'
+import { registerCapabilityPolicyHostFace } from './host-face.ts'
+import * as AgentEfficiencyGuard from './guard.ts'
+export interface Config {
+  guard?: AgentEfficiencyGuard.Config
+}
+
+/** Root plugin identity (matches the `capability-menu` patch entry id). */
+export const name = 'agent-efficiency-guard'
+
+/**
+ * Root entry: mount the browser-facing capabilityPolicy gateway and claim its
+ * namespace in the Typert registry, so `@deepseek-ai/dsh-api-gateway` accepts
+ * `/api/capabilityPolicy/*` no matter how the boot order turns out (see
+ * `src/host-face.ts` for the mechanism and the 404 it prevents).
+ *
+ * The registry is reached through `ctx.inject` instead of a static `inject`: a
+ * host that has no `typert` service must still mount the gateway, exactly as it
+ * did before this hook existed.
+ */
+export function apply(ctx: Context, config: Config = {}): void {
+  ctx.plugin(CapabilityPolicyGateway)
+  ctx.plugin(AgentEfficiencyGuard, config.guard ?? {})
+  ctx.inject(['typert'], (registry) => {
+    registerCapabilityPolicyHostFace(registry)
+  })
+}
