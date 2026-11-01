@@ -6,8 +6,8 @@
 
 把 Capability Menu 的能力目录、按需调用、三档策略与 Agent Efficiency Guard 合并为一个可独立安装的 DSH 插件。
 
-已完成 N7、N2、N3、N4、N5、N8、N9、N11。**未发布 npm、未创建 tag、未推送远端。** N9 使用独立 scratch Electron/profile 验收；生产 profile 文件未被修改。
-真实 Electron renderer、本地 stdio MCP 初始化/工具同步、按会话模式设置、13 项 Agent Session 授权断言及隔离回滚均已完成；N10 外部发布动作仍需单独授权。不接入私有 Token Saver / Prompt Cache API。
+已完成 N7、N2、N3、N4、N5、N8、N9、N11。N9 使用独立 scratch Electron/profile 验收；生产 profile 文件未被修改。
+真实 Electron renderer、本地 stdio MCP 初始化/工具同步、按会话模式设置、13 项 Agent Session 授权断言及隔离回滚均已完成。N10 本地门禁通过并提交为 `f2f416d`；npm 账号 `yan3ra` 已认证，registry 中 `0.1.7` 尚未发布。GitHub 远端连接当前失败。不接入私有 Token Saver / Prompt Cache API。
 
 ## 必须保持的约束
 
@@ -28,16 +28,16 @@
 - N5：保留首个候选 `0.1.7`；删除未打包 `./src/*` 导出，修正 README 的安装方式和 npm 文档链接，更新验收与发布说明。
 - 本地 `pnpm typecheck`、全量 14 文件/203 测试、`pnpm build`、`npm pack --dry-run` 均通过；最终包所有 14 个 export 目标存在，60 个运行时文件与实测安装包逐字节一致。
 - 最终包 201,340 bytes、63 files；SHA-256 `9afcb5c6d164e81fde217971e46ff836895169ca747bfa126196957fda050003`。包位置只在当前 session scratch，长期元数据保存在证据目录。
-- 材料提交：`bc3604b`（隔离验证与发布门禁）、`9bed196`（Electron 阻塞记录），以及本轮 N9 验收证据改动；未创建 tag、未发布 npm、未推送。N9 隔离授权验收通过，但候选仍未发布或完成生产兼容性切换。
+- 本轮重新运行 `pnpm typecheck`、全量 14 文件/203 测试、`pnpm build`、`npm pack --dry-run`，均通过。包 63 文件、201,340 bytes；N9 fixture 不在 tarball；SHA-512 integrity 与既有验收包相同。N9 报告/截图/fixture 已提交 `f2f416d`。
 
 
 ## 暂停点（2026-11-01）
 
 - **生产桌面未运行，需用户自行重启。** `C:\Users\yansui\.dsh\profiles\desktop` 未被写入或切换；本轮没有关闭或操作生产进程。
-- **Git**：`main` 比 `origin/main` 超前 3 个提交；本轮 N9 文档/证据与测试夹具改动尚未提交；没有 `v0.1.7` tag。
+- **Git / 发布**：本地 `main` 为 `f2f416d`，工作树提交前干净；最近已知远端 `main` 为 `cc382ee`，本次查询连接失败。无 `v0.1.7` tag。npm `whoami` 为 `yan3ra`，版本查询 E404（未发布）。尚未 publish、tag、push；CI 未因本次提交触发。
 - **隔离资源已回滚**：N9 报告 13/13 断言通过、无 fatal/cleanupErrors；连接已断开、剩余连接为 0，隔离 `cordis.patch.yml` 恢复 `[]`，Electron/Host/MCP/探针进程已停止。生产 profile 未写入或切换。
 - **N9 已通过真实 Agent 授权边界**：公开 `session_tools` search/preview/activate/deactivate 均通过；未授权直接调用和 `meta_invoke` 被拒绝，显式授权后两者均成功，另一 Agent 被隔离，停用后两者再次拒绝。server marker 精确只有 `authorized-agent-only` 与 `authorized-meta-call` 两条调用。详见 `docs/release-0.1.7/evidence/n9-results.json`。
-- **继续方式**：唯一清单中的 N10 是审核并执行首次发布。npm/tag/push 属外部动作，仍需明确授权；不要因 N9 通过而推定已获发布授权。
+- **继续方式**：唯一清单见 `docs/release-0.1.7/next-steps.md`。npm 首发可先按已验收 tarball完成；GitHub 连通后须先重读远端，再推送 main/tag 并检查 CI/Release。
 
 ## 真正的遗留与限制
 
