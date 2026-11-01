@@ -1,4 +1,5 @@
 # dsh-agent-efficiency-guard
+[![CI](https://github.com/YAN3RA/dsh-agent-efficiency-guard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/YAN3RA/dsh-agent-efficiency-guard/actions/workflows/ci.yml)
 
 这是一个给 DSH 用的能力目录 + Agent 效率守卫插件。它已经把上游 Capability Menu 的核心能力和预算/死循环防护放进同一个可构建包里。
 
