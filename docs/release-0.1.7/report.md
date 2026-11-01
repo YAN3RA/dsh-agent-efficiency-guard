@@ -58,7 +58,7 @@
 - README 使用独立 DSH_HOME + Web 模板 + `.tgz` 的已验证安装方式；npm 页面所需的文档链接改为 GitHub URL。
 - `pnpm bridge` 是源码开发辅助脚本，未打包；不把它列为安装后的运行依赖。正常 tarball 在宿主的公开模块解析机制下完成了运行验证。
 - release job 只创建 GitHub Release，不发布 npm。annotated tag 必须恰好为 `v0.1.7`，说明非空且不能只有 `Release v0.1.7`。
-- 发布说明候选见 [release-notes.md](release-notes.md)。本轮没有创建 tag、发布 npm、提交或推送。
+- 发布说明候选见 [release-notes.md](release-notes.md)。材料已提交为 `bc3604b`；本轮没有创建 tag、发布 npm 或推送。
 - N9 真实 Electron 验收尚未完成，故本候选不能进入 N10 的 tag/npm/push release gate。
 
 完成剩余验收、审核本地改动并提交后，才可在明确授权下发布和推送标签。计划中的命令如下，本轮未执行：

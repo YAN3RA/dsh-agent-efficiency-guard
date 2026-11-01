@@ -33,6 +33,6 @@ Structured evidence: [results.json](release-0.1.7/evidence/results.json). Raw lo
 - Real Electron renderer and external MCP Session authorization remain blocked (N9): the active user-owned Electron instance holds the single-instance lock, the packaged app exposed no usable CDP endpoint, and an independent DSH_HOME desktop profile was not created. Current production manifest metadata is not a substitute for isolated renderer acceptance. See [N9 evidence](release-0.1.7/evidence/n9-results.json).
 - No public host Token Saver/Prompt Cache adapter is claimed. Save Token retains compression/original recovery ownership; Guard uses public events and hashes only.
 - No dedicated Guard statistics UI was added.
-- No npm publish, tag creation, Git commit/push or production configuration change/restart was performed in this round; N10 release actions remain blocked by N9.
+- No npm publish, tag creation or push was performed; local verification/diagnostic materials are committed in `bc3604b`. Production configuration was not changed or restarted; N10 release actions remain blocked by N9.
 
 The production manifest already listed this plugin as a local source link and bundle when inspected. The old Capability Menu remains a dependency but is absent from the bundle list. Building this workspace updates the source link's `lib/`; it is not an immutable deployment. See the prepared [production rollout/rollback plan](release-0.1.7/production-rollout.md).
