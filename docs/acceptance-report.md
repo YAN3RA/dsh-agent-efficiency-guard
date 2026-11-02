@@ -1,6 +1,6 @@
-# Acceptance report — 0.1.7 candidate
+# Acceptance report — 0.1.8 candidate
 
-Updated: 2026-11-01. Full evidence and limitations: [release-0.1.7/report.md](release-0.1.7/report.md).
+Updated: 2026-11-01. Full 0.1.7 isolation evidence and limitations: [release-0.1.7/report.md](release-0.1.7/report.md). 0.1.8 changes release metadata and documentation only; no runtime source behavior changed.
 
 ## Local checks
 

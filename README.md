@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/DeepSeek%20Harness-0.2.1--rc.5-4D6BFE?style=flat-square&labelColor=161b22&logo=deepseek&logoColor=white" alt="DeepSeek Harness 0.2.1-rc.5" /></a>
-  <a href="./package.json"><img src="https://img.shields.io/badge/package-v0.1.7-CB3837?style=flat-square&labelColor=161b22&logo=npm&logoColor=white" alt="package version 0.1.7" /></a>
+  <a href="./package.json"><img src="https://img.shields.io/badge/package-v0.1.8-CB3837?style=flat-square&labelColor=161b22&logo=npm&logoColor=white" alt="package version 0.1.8" /></a>
   <a href="https://github.com/YAN3RA/dsh-agent-efficiency-guard/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-configured-208B3A?style=flat-square&labelColor=161b22&logo=githubactions&logoColor=white" alt="CI configured" /></a>
   <a href="https://github.com/YAN3RA/dsh-agent-efficiency-guard/blob/main/docs/acceptance-report.md"><img src="https://img.shields.io/badge/tests-203%20passed-208B3A?style=flat-square&labelColor=161b22&logo=vitest&logoColor=white" alt="203 tests passed" /></a>
   <a href="https://github.com/YAN3RA/dsh-agent-efficiency-guard/stargazers"><img src="https://img.shields.io/github/stars/YAN3RA/dsh-agent-efficiency-guard?style=flat-square&color=dbab09&labelColor=161b22&logo=github&logoColor=white" alt="GitHub stars" /></a>

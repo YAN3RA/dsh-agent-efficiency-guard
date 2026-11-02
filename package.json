@@ -1,6 +1,6 @@
 {
   "name": "dsh-agent-efficiency-guard",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "DSH capability catalog with Agent efficiency budgets, PI-Desktop cooperation boundaries, and observable no-progress loop protection.",
   "license": "Apache-2.0",
   "repository": {
