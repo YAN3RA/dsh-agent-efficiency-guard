@@ -7,7 +7,7 @@
 把 Capability Menu 的能力目录、按需调用、三档策略与 Agent Efficiency Guard 合并为一个可独立安装的 DSH 插件。
 
 已完成 N7、N2、N3、N4、N5、N8、N9、N11。N9 使用独立 scratch Electron/profile 验收；生产 profile 文件未被修改。
-真实 Electron renderer、本地 stdio MCP 初始化/工具同步、按会话模式设置、13 项 Agent Session 授权断言及隔离回滚均已完成。N10 本地门禁与 tarball 校验通过；npm 账号 `yan3ra` 已认证，但 registry 因发布策略拒绝本次 publish（E403：需 2FA 或 bypass 2FA granular token）。GitHub 远端连接失败。不接入私有 Token Saver / Prompt Cache API。
+真实 Electron renderer、本地 stdio MCP 初始化/工具同步、按会话模式设置、13 项 Agent Session 授权断言及隔离回滚均已完成。N10 已推送 GitHub `main` 与 annotated `v0.1.7`，按用户决定不发布 npm；正在核验 CI/Release。不接入私有 Token Saver / Prompt Cache API。
 
 ## 必须保持的约束
 
@@ -34,10 +34,10 @@
 ## 暂停点（2026-11-01）
 
 - **生产桌面未运行，需用户自行重启。** `C:\Users\yansui\.dsh\profiles\desktop` 未被写入或切换；本轮没有关闭或操作生产进程。
-- **Git / 发布**：本地 `main` 为 `5198628`，待更新交接文档提交后工作树应干净；远端最近已知 `main` 为 `cc382ee`，本次查询连接失败。无 `v0.1.7` tag。npm 版本仍未发布；npm publish 返回 E403，要求 2FA 或启用 bypass 2FA 的 granular token。未创建 tag/push；本次提交未触发 CI。
+- **Git / 发布**：N10 候选已推送至 GitHub `main` 与 annotated `v0.1.7`。npm 包未发布（用户选择 GitHub 安装）；CI/Release 状态待本轮核验。
 - **隔离资源已回滚**：N9 报告 13/13 断言通过、无 fatal/cleanupErrors；连接已断开、剩余连接为 0，隔离 `cordis.patch.yml` 恢复 `[]`，Electron/Host/MCP/探针进程已停止。生产 profile 未写入或切换。
 - **N9 已通过真实 Agent 授权边界**：公开 `session_tools` search/preview/activate/deactivate 均通过；未授权直接调用和 `meta_invoke` 被拒绝，显式授权后两者均成功，另一 Agent 被隔离，停用后两者再次拒绝。server marker 精确只有 `authorized-agent-only` 与 `authorized-meta-call` 两条调用。详见 `docs/release-0.1.7/evidence/n9-results.json`。
-- **继续方式**：唯一清单见 `docs/release-0.1.7/next-steps.md`。需先通过 npm 官方流程完成发布要求的 2FA/授权 token，再重新校验 tarball 并发布；GitHub 连通后先重读远端，再推送 main/tag 并检查 CI/Release。
+- **继续方式**：GitHub 安装使用 `v0.1.7` tag；本轮完成 CI/Release 核验后更新此处状态。
 
 ## 真正的遗留与限制
 
