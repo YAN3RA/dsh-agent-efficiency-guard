@@ -2,8 +2,8 @@
 
 更新：2026-11-01。唯一待办清单；HANDOFF 引用本文件，不另维护一组编号。
 
-N1–N9 已完成，N9 独立 Electron/MCP Agent Session 授权链 13/13 断言通过。N10 `v0.1.7` 已发布于 GitHub；CI 状态未能通过公开 API 确认。用户决定采用 GitHub 安装且不发布 npm。当前 N10 后续版本为 `0.1.8`，仅更新版本元数据和文档，尚未验证、提交或推送。生产配置未修改。
-1. **N10 ·【进行中】完成 `0.1.8` GitHub 发布**：运行四项本地检查，提交新版本材料，创建匹配包版本且含说明的 annotated `v0.1.8`，推送 `main` 与 tag，检查 CI/Release；成本：需全套本地检查及 GitHub 网络；建议：保持 `v0.1.7` 不变，不发布 npm。
+N1–N9 已完成，N9 独立 Electron/MCP Agent Session 授权链 13/13 断言通过。N10 `v0.1.7`、`v0.1.8` GitHub Release 已创建；`0.1.8` 本地四项检查通过，远端 main/tag 与 Release 已核验。用户决定使用 GitHub 安装且不发布 npm。CI API 受 rate limit 限制，状态待核验。生产配置未修改。
+1. **N10 ·【待核验】检查 `v0.1.8` CI 结果**：待 GitHub Actions API 限流恢复后读取对应 workflow run；成本：数分钟等待；建议：只确认 run 结论，不重复本地验证或改动已发布 tag。
 
 
 ## 关键证据与现场

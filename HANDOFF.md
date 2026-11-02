@@ -7,7 +7,7 @@
 把 Capability Menu 的能力目录、按需调用、三档策略与 Agent Efficiency Guard 合并为一个可独立安装的 DSH 插件。
 
 已完成 N7、N2、N3、N4、N5、N8、N9、N11。N9 使用独立 scratch Electron/profile 验收；生产 profile 文件未被修改。
-真实 Electron renderer、本地 stdio MCP 初始化/工具同步、按会话模式设置、13 项 Agent Session 授权断言及隔离回滚均已完成。N10 `v0.1.7` GitHub Release 已创建；CI 状态未能确认。用户选择不发布 npm，当前按新版本规则准备 `0.1.8`，待检查、提交并推送。不接入私有 Token Saver / Prompt Cache API。
+真实 Electron renderer、本地 stdio MCP 初始化/工具同步、按会话模式设置、13 项 Agent Session 授权断言及隔离回滚均已完成。N10 `v0.1.7` 与 `v0.1.8` GitHub Release 已创建；本地检查通过，CI 状态未能确认。`main` 与 annotated `v0.1.8` 指向 `66a59f247caf30609a806fc2e560c71f8be4f021`；用户决定不发布 npm。不接入私有 Token Saver / Prompt Cache API。
 
 ## 必须保持的约束
 
@@ -34,10 +34,10 @@
 ## 暂停点（2026-11-01）
 
 - **生产桌面未运行，需用户自行重启。** `C:\Users\yansui\.dsh\profiles\desktop` 未被写入或切换；本轮没有关闭或操作生产进程。
-- **Git / 发布**：`v0.1.7` tag 与 GitHub Release 保持不变。当前 `package.json` 更新到 `0.1.8`，正在完成本地验证；完成后创建 annotated `v0.1.8` 并推送。npm 不发布。
+- **Git / 发布**：`main` 与 annotated `v0.1.8` 已推送并确认远端 peeled commit 为 `66a59f2`；GitHub Release 页面 HTTP 200。旧 `v0.1.7` 保持不变；npm 不发布。CI API 受 rate limit 限制，结果未确认。
 - **隔离资源已回滚**：N9 报告 13/13 断言通过、无 fatal/cleanupErrors；连接已断开、剩余连接为 0，隔离 `cordis.patch.yml` 恢复 `[]`，Electron/Host/MCP/探针进程已停止。生产 profile 未写入或切换。
 - **N9 已通过真实 Agent 授权边界**：公开 `session_tools` search/preview/activate/deactivate 均通过；未授权直接调用和 `meta_invoke` 被拒绝，显式授权后两者均成功，另一 Agent 被隔离，停用后两者再次拒绝。server marker 精确只有 `authorized-agent-only` 与 `authorized-meta-call` 两条调用。详见 `docs/release-0.1.7/evidence/n9-results.json`。
-- **继续方式**：完成 `0.1.8` 本地验证后，创建并推送匹配的 annotated `v0.1.8`；检查对应 CI 与 GitHub Release，不移动 `v0.1.7`。
+- **继续方式**：若继续 N10，只需在 GitHub API 限流恢复后核验 `v0.1.8` 的 CI run；不重跑既有本地检查，不改 tag。
 
 ## 真正的遗留与限制
 
@@ -73,4 +73,4 @@
 - RPC 请求需 `type:'client-request'`、唯一 `rpcId`、`method:'capabilityPolicy/getConfig'`、`payload:{args:{}}`，POST 到 `/api/capabilityPolicy/getConfig`；同时检查 HTTP 和业务 `result.ok`。
 - 当前 npm JSON pack 输出按包名分组，不是数组。正常 tarball 的宿主解析机制已可运行，不需要执行开发用 `pnpm bridge`。
 - `pnpm remove` 不接受 `--ignore-scripts`；本轮用进程级 `NPM_CONFIG_IGNORE_SCRIPTS=true` 后执行卸载成功。
-- release job 只创建 GitHub Release；tag 必须为 annotated `v<package.json version>` 且含实质说明。`v0.1.7` 已发布；本轮正在准备 `v0.1.8`。
+- release job 只创建 GitHub Release；tag 必须为 annotated `v<package.json version>` 且含实质说明。`v0.1.7` 与 `v0.1.8` 均已发布。
