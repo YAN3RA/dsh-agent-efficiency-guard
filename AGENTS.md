@@ -1,60 +1,55 @@
-# dsh-agent-efficiency-guard 项目约束
+# dsh-agent-efficiency-guard
 
-## 项目定位
+## 项目概述
 
-这是一个可独立安装的 DSH 插件，融合 Capability Menu 与 Agent Efficiency Guard：
+独立 DSH 插件，融合 Capability Menu 的能力目录、按需检索/调用与 Resident / On-demand / Disabled 策略，并增加 Agent Efficiency Guard。核心边界：Guard 只管理本插件的 Agent / Turn 执行预算；DSH 宿主负责模型与会话，Save Token 负责工具结果压缩和原文恢复。
 
-- `src/` 是唯一源码来源；不要直接修改 `lib/` 里的生成文件。
-- 能力目录、`meta_search`、`meta_invoke`、Resident / On-demand / Disabled 策略来自上游 Capability Menu 基线。
-- Guard 负责 Step / Tool / Time 预算、重复调用提醒和可观察的无进展循环停止。
-- `dsh-plugin-save-token` 继续负责工具结果压缩与原文恢复；本项目不得再实现第二套压缩链。
-- PI-Desktop / DSH 宿主继续负责模型、Provider、reasoning effort、完整历史和全局上下文预算。
+## 环境与命令
 
-## 目录约定
+- TypeScript / TSX，pnpm，Vitest；锁定环境见 `package.json` 与 `pnpm-lock.yaml`。
+- 安装：`pnpm install --frozen-lockfile`
+- 检查：`pnpm typecheck`、`pnpm test`
+- 构建：`pnpm build`
+- 发布包检查：`npm pack --dry-run`
+- 当前 DSH peer / 实际宿主版本及验证边界以 `HANDOFF.md` 和 `docs/acceptance-report.md` 为准。
 
-- `src/`：TypeScript/TSX 源码；按职责拆分能力目录、策略、Guard、客户端和 Typert 网关。
-- `tests/`：Vitest 测试；每个新行为必须有对应测试，Windows 路径使用 `node:os` 的 `tmpdir()` 和 `node:path`。
-- `docs/`：运行时审计、宿主集成、验收和后续设计记录。
-- `assets/`：README 或设置页使用的静态资源。
-- `lib/`：`pnpm build` 生成的发布产物；不得手工编辑。
-- `cordis.patch.yml`：隔离 profile 使用的 bundle patch；不要把用户真实 `desktop` profile 的配置复制进来。
-- `package.json` / `pnpm-lock.yaml`：依赖、exports、构建和发布契约；升级依赖时一起检查 peer 兼容范围。
-- `AGENTS.md`：本项目开发约束。
+## 架构与目录
 
-## 开发流程
+- `src/`：唯一运行时代码来源；能力目录、策略、Guard、客户端与 Typert 网关。
+- `tests/`：Vitest。每个新行为补对应测试；Windows 路径使用 `node:os` 的 `tmpdir()` 和 `node:path`。
+- `lib/`：由 `pnpm build` 生成，禁止手工编辑。
+- `cordis.patch.yml`：插件 bundle patch；不复制真实用户 profile 配置。
+- `docs/`：运行时审计、宿主集成、验收结果、诊断与发布材料；`HANDOFF.md` 只记录当前进度。
 
-1. 先阅读 `docs/runtime-audit.md`、`docs/host-pi-desktop-integration.md` 和 `docs/acceptance-report.md`。
-2. 先改 `src/` 与 `tests/`，再运行：
+## 开发规矩
 
-   ```powershell
-   pnpm typecheck
-   pnpm test
-   pnpm build
-   npm pack --dry-run
-   ```
+- 修改 DSH Hook 前核对当前 `@deepseek-ai/dsh-*` 类型定义与公开 API，不从旧示例猜接口。
+- Disabled 必须在实际执行入口拒绝调用，不能只隐藏前端 Schema。
+- Guard 状态按 Agent / Turn 隔离；只用可观察的工具签名、结果指纹、Step 和 Turn 事件。指纹只保留哈希，不保存完整结果；不读取、保存或输出隐藏思维链。
+- 不重复实现 Save Token 的压缩、展开、原文落盘或历史重写；不调用 PI-Desktop / DSH 私有字段。没有公开适配器时安全降级并如实记录。
+- Prompt 投影和 `meta_search` 输出保持短、稳定、可缓存；不为统计增加模型请求。
+- 改状态文件格式时先补迁移测试并保留旧文件回滚能力。
+- 测试使用临时目录和平台安全路径；不硬编码 POSIX `/tmp`。
 
-3. 修改 DSH Hook 前，先核对当前安装的 `@deepseek-ai/dsh-*` 类型定义；不要根据旧示例猜 API。
-4. 修改能力策略时，保持 Disabled 的执行层拒绝，不得只隐藏前端 Schema。
-5. 修改 Guard 时，保持 Agent / Turn 隔离；不要读取、保存或输出模型隐藏思维链。
-6. 如果需要改变状态文件格式，先增加迁移测试，并保留旧文件回滚能力。
-7. 生产 profile 只做隔离验证后再切换；本仓库默认不触碰 `C:\Users\yansui\.dsh\profiles\desktop`。
+## 验证与发布
 
-## Token 与宿主边界
+改源码或行为后运行：
 
-- 不重复实现 Save Token 的压缩、展开、原文落盘或历史重写。
-- 不调用 PI-Desktop / DSH 私有字段；宿主没有公开适配器时必须安全降级并如实记录。
-- Prompt 投影和 `meta_search` 输出保持短、稳定、可缓存；不要为了统计增加额外模型请求。
-- Guard 只使用可观察的工具签名、结果指纹、Step 和 Turn 事件；结果指纹只保留哈希，不保存完整结果。
+```powershell
+pnpm typecheck
+pnpm test
+pnpm build
+npm pack --dry-run
+```
 
-## 版本与发布
+只有四项全部通过，才可称版本本地验证通过。版本号以 `package.json` 为准；GitHub Release tag 必须为匹配版本的 annotated `v<version>`，并包含实质说明。发布渠道与 CI 工作流见 `.github/workflows/ci.yml`。不得因本项目采用 GitHub 安装而执行 npm publish。
 
-- 版本号以 `package.json` 为准；发布前必须更新 `CHANGELOG.md`（若创建）和 `docs/acceptance-report.md`。
-- GitHub 仓库：`https://github.com/YAN3RA/dsh-agent-efficiency-guard`。
-- 只有 `typecheck`、全量测试、`build` 和 `npm pack --dry-run` 全部通过，才可把版本标记为可交付。
-- 不提交 `node_modules/`、测试缓存、临时 `.tgz`、本机 profile、凭据、session 或日志。
+不提交 `node_modules/`、`lib/`、临时 `.tgz`、测试缓存、本机 profile、Session、凭据或原始日志。
 
-## 修改边界
+## 已知边界与修改授权
 
-可以直接修改：源码、测试、文档、`cordis.patch.yml`、package 元数据和 CI。
-
-必须先说明并单独验证：生产 profile 安装、切换旧 Capability Menu、批量删除或移动用户配置、发布 npm 包、推送带凭据的外部内容。
+- N8：默认宿主 spill policy 可能让 Save Token 展开上游预览；完整原文定位与限制见 `docs/host-pi-desktop-integration.md`、`docs/release-0.1.7/n8-diagnosis.md`。
+- N11：真实 Electron `rebuilt` 热重载帧未覆盖；已知限制见 `docs/release-0.1.7/n11-diagnosis.md`。
+- 隔离 N9 Agent Session 授权链通过 13/13 断言，不代表完整生产兼容性验收通过。
+- 默认不触碰 `C:\Users\yansui\.dsh\profiles\desktop`。生产安装、切换旧 Capability Menu、批量删除/移动用户配置属于单独操作，先说明影响并取得明确授权。
+- 可直接修改源码、测试、文档、patch、package 元数据和 CI；任何外部发布、生产 profile 变更都须按本轮授权执行。

@@ -1,18 +1,18 @@
 # Acceptance report — 0.1.8 candidate
 
-Updated: 2026-11-01. Full 0.1.7 isolation evidence and limitations: [release-0.1.7/report.md](release-0.1.7/report.md). 0.1.8 changes release metadata and documentation only; no runtime source behavior changed.
+Updated: 2026-11-02. Detailed 0.1.7 isolation evidence and limitations: [release-0.1.7/report.md](release-0.1.7/report.md). Version 0.1.8 updates release metadata and documentation only; no runtime source behavior changed.
 
-## Local checks
+## 0.1.8 local checks
 
 - Node.js `v24.22.1`, pnpm `11.28.5`; typecheck/unit tests use locked DSH peers `0.2.1-rc.3`.
 - `pnpm typecheck` — passed.
 - `pnpm test` — 14 files, 203 tests passed.
 - `pnpm build` — passed; browser bundle emitted.
-- `npm pack --dry-run` — passed including prepare/build; the final 63-file tarball has all 14 export targets, and 60 runtime files are byte-identical to the smoke-tested installation. See [package evidence](release-0.1.7/evidence/package.json).
+- `npm pack --dry-run` — 0.1.8 package metadata and GitHub release notes passed; the 63-file package retains the 0.1.7-verified export targets. See [0.1.7 package evidence](release-0.1.7/evidence/package.json).
 
 The earlier 95 Windows fixture failures were resolved using `node:os` `tmpdir()` and platform-safe joins. No new runtime behavior was added in this acceptance round; the package metadata removes the nonexistent `./src/*` export and README installation/documentation links were corrected.
 
-## Isolated host verification
+## 0.1.7 isolated host verification
 
 DSH `0.2.1-rc.5`, an independent scratch `DSH_HOME`, fresh `web` template and actual `0.1.7` tarball were used. Production credentials, Sessions and MCP connections were not copied. Save Token `2.4.1` and MCP Connector `0.2.87` were installed from the local cache.
 
@@ -31,8 +31,8 @@ Structured evidence: [results.json](release-0.1.7/evidence/results.json). Raw lo
 - **Large-result cause identified (N8 complete):** Host `dsh-spill-policy` defaults to 12,500 estimated inline tokens. Save Token caches the upstream head/tail preview, so expansion is not necessarily the initial tool output. The fresh 174,389-character sample expanded to 49,933, but its embedded host spill locator recovered the complete file with matching SHA-256. Boundary tests at 49,984/49,985 and an isolated-only 200,000-token override confirmed the cause; the latter restored all 174,389 characters in value, content and Save Token file. See [N8 diagnosis](release-0.1.7/n8-diagnosis.md). Production settings remain unchanged; arbitrary-size/restart recovery is not claimed.
 - **Hot reload cause identified (N11 complete):** cold start, isolated profile patch reload and isolated package-manager operations were clean, but the public Web CLI did not emit the Electron Client Modules `rebuilt` replace frame. Source inspection attributes `session-maybe` to the host's serial teardown window and Connector `layout` to its unload path missing a `layout` Cordis inject/using an unsafe fallback. The supported mitigation is cold restart/page refresh; Connector remediation belongs upstream. See [N11 diagnosis](release-0.1.7/n11-diagnosis.md) and [evidence](release-0.1.7/evidence/n11-results.json).
 - Real Electron renderer was verified in an independent DSH_HOME/userData. A local synthetic stdio MCP server initialized and synchronized `n9_echo`; Host `toolsList` reported one healthy tool, and Connector accepted `injectionMode=session` with business tools hidden by default. The preserved 1920×1233 [renderer screenshot](release-0.1.7/evidence/n9-electron-renderer.png) remains the visual evidence. A subsequent real Agent run passed all 13 authorization assertions: unauthorized direct and `meta_invoke` calls were rejected; search/preview/activate worked; authorized direct and meta calls reached the server; another Agent was isolated; and deactivation restored both denials. The server marker contained exactly the two authorized calls. No fatal or cleanup errors occurred; the connection was disconnected, no connections remained, the isolated patch was restored to `[]`, and isolated Electron/Host processes were stopped. No model request or production profile change occurred. See [N9 evidence](release-0.1.7/evidence/n9-results.json).
-- Local `pnpm typecheck`, all 203 tests, `pnpm build`, and `npm pack --dry-run` passed during continuation. Build updates the production source link's `lib/` target; the production Desktop itself was not running or modified.
-- No npm publish, tag creation or push was performed; N9 authorization acceptance passed, but N10 external release actions remain separately unauthorized.
+- Local `pnpm typecheck`, all 203 tests, `pnpm build`, and `npm pack --dry-run` passed for 0.1.8. The release updates metadata and documentation only; no runtime source behavior changed.
+- GitHub Release `v0.1.8` was created from its matching annotated tag. GitHub Actions API rate limiting prevented confirmation of the CI run; npm was not published by decision.
 - No public host Token Saver/Prompt Cache adapter is claimed. Save Token retains compression/original recovery ownership; Guard uses public events and hashes only.
 - No dedicated Guard statistics UI was added.
 
