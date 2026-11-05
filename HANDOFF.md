@@ -8,6 +8,8 @@
 
 ## 当前实现
 
+- 安装来源：profile `desktop` 由本地 tarball `file:` 改为 GitHub Release 附件 URL（`.../releases/download/v0.1.9/dsh-agent-efficiency-guard-0.1.9.tgz`）。附件 SHA-1 `fdb26211d0f730d5959606748b291fa09ec616f9` 与本地 tarball 一致。**不要改用 `git+https://` 来源**：仓库不含 `lib/`（构建产物），git 安装会触发 pnpm `prepare` 本地构建，并被 pnpm 构建脚本拦截，需在 `pnpm-workspace.yaml` 的 `allowBuilds` 写入**带 commit sha 的 key**（每次发版都变）；附件 URL 是纯下载，实测 2.3s 且无需 allowlist。后续发版需先上传 tarball 附件，再改依赖 URL。
+
 - 包版本：`0.1.9`；GitHub `v0.1.9` 已发布（tag 与 Release 均指向 `c11e9a8`），CI 在 main 与 tag 上均 success。已安装到本机生产 profile `desktop`。
 - **2026-11-05 本轮修复（待 Host 重载生效）：** `capabilityPolicy.classifyAll` 在生产 Host 报 `gateway/definition-unavailable: … its strict definition was withdrawn and SRC fallback is forbidden`。根因是同一 package `dsh-agent-efficiency-guard` 被 `register()` 两次（`capabilityPolicyHostFace` 与 `usageHostFace` 各一次），Typert 按 package 键控，第二次注册撤销了第一次的 strict definition，端点保持 `hasSeen()` 却无法解析。修复：新增 `mergeHostFaces()` 把两个 face 合成单一 contribution，`src/index.ts` 只调用一次 `registerCapabilityPolicyHostFace(registry, [usageHostFace()])`。回归用例见 `tests/host-face.spec.ts`（merged host face 5 项）与 `tests/client-plugin-section.spec.tsx`。
 - **2026-11-05 设置页合并：** 原来 `capability`(12) 与 `usage`(13) 两个 `settings.section` 合成一个（仍 id `capability`、order 12），由新的 `src/client/PluginSection.tsx` 提供功能分类标签（能力目录 / 调用统计），两个视图都保持挂载（`hidden` 切换）以保留各自 Remote 订阅。`src/client/index.ts` 不再注册第二个 section。
