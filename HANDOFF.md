@@ -8,7 +8,7 @@
 
 ## 当前实现
 
-- 包版本：`0.1.8`；GitHub `v0.1.8` 已发布。本地改动未提交、未发布。
+- 包版本：`0.1.9`；GitHub `v0.1.9` 已发布（tag 与 Release 均指向 `c11e9a8`），CI 在 main 与 tag 上均 success。已安装到本机生产 profile `desktop`。
 - **2026-11-05 本轮修复（待 Host 重载生效）：** `capabilityPolicy.classifyAll` 在生产 Host 报 `gateway/definition-unavailable: … its strict definition was withdrawn and SRC fallback is forbidden`。根因是同一 package `dsh-agent-efficiency-guard` 被 `register()` 两次（`capabilityPolicyHostFace` 与 `usageHostFace` 各一次），Typert 按 package 键控，第二次注册撤销了第一次的 strict definition，端点保持 `hasSeen()` 却无法解析。修复：新增 `mergeHostFaces()` 把两个 face 合成单一 contribution，`src/index.ts` 只调用一次 `registerCapabilityPolicyHostFace(registry, [usageHostFace()])`。回归用例见 `tests/host-face.spec.ts`（merged host face 5 项）与 `tests/client-plugin-section.spec.tsx`。
 - **2026-11-05 设置页合并：** 原来 `capability`(12) 与 `usage`(13) 两个 `settings.section` 合成一个（仍 id `capability`、order 12），由新的 `src/client/PluginSection.tsx` 提供功能分类标签（能力目录 / 调用统计），两个视图都保持挂载（`hidden` 切换）以保留各自 Remote 订阅。`src/client/index.ts` 不再注册第二个 section。
 - 能力菜单支持 Native/MCP Tools 与 Skills 目录、`meta_search` / `meta_invoke`、Resident / On-demand / Disabled 策略、筛选/详情、MCP/Skill 来源管理、检索元数据和诊断。
@@ -35,7 +35,8 @@
 - `pnpm build`：通过。
 - `npm pack`：111 个文件，包版本 `0.1.8`，tarball SHA-1 `f0f4250cae53f6e98b55cefa0bdaea400d207362`。
 - 已安装到本机生产 profile `desktop`（`file:` 依赖指向该 tarball）。安装产物校验：全部 `lib/**/*.js` 通过 `node --check`；`lib/index.js` 只调用一次 `registerCapabilityPolicyHostFace(registry, [usageHostFace()])`；独立加载 `lib/host-face.js` 后 `mergeHostFaces` 产出 26 个 invocation、package 为 `dsh-agent-efficiency-guard`；`lib/client.js` 中 `settings.section` 注册只剩 1 处（id `capability`）。
-- **未完成：** 运行中的 Host（PID 31936，启动于 00:45:45）仍加载 02:09 之前的旧包，需要用户在 GUI 重启 Host（或重开应用）后才会使用新代码。本会话跑在该 Host 内，无法自行重启。
+- **重启后复验（2026-11-05 15:34 重启，PID 22220）：** Host 启动正常（`boot-state ok:true`、`crashReason:null`）；插件已在新 Host 中加载（`capability-menu-policy.json` 于 15:44 被写入）；`desktop` profile 中的 `lib/` 与仓库构建逐字节一致；`lib/index.js` 只有一次 `registerCapabilityPolicyHostFace(registry, [usageHostFace()])`；进程内建 merged face 自检 6/6 通过（单一 package、无重复 invocation id、`classifyAll` 与 `getSnapshot` 均在列、2 namespace / 2 service）。
+- **仍未直接断言「Remote 返回 200」：** Web 网关对所有 `/api/*` 统一返回 401（连不存在的 namespace 也是 401），认证依赖进程内存中的签名 cookie secret，因此无法从外部区分「未注册」与「需认证」。需要用户在 GUI 的 设置 → 能力菜单 / 调用统计 页面确认。
 
 ## 未完成 / 未验证
 
