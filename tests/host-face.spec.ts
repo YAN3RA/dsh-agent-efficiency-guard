@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { TYPERT_REMOTE } from '../src/client/remote.ts'
+import { USAGE_TYPERT_REMOTE } from '../src/client/usage-remote.ts'
 import {
   HOST_FACE_NAMESPACE,
   HOST_FACE_PACKAGE,
   HOST_FACE_SERVICE,
   capabilityPolicyHostFace,
+  mergeHostFaces,
 } from '../src/host-face.ts'
+import { usageHostFace } from '../src/usage/usage-host-face.ts'
 
 const hostFace = capabilityPolicyHostFace()
 
@@ -110,5 +113,55 @@ describe('capabilityPolicy host face', () => {
         expect(parameter.codec.create().parse(value)).toBe(value)
       }
     }
+  })
+})
+
+describe('merged host face', () => {
+  // Regression: the browser mounts ONE Typert contribution
+  // (`TYPERT_REMOTE_WITH_USAGE`), so the Host must claim one too. Two
+  // `register()` calls for the same `package` make Typert withdraw the first
+  // contribution's strict definitions; the endpoint then stays `hasSeen()` and
+  // the gateway answers `gateway/definition-unavailable: … its strict definition
+  // was withdrawn and SRC fallback is forbidden`. That was the production
+  // `capabilityPolicy.classifyAll` failure.
+  const merged = mergeHostFaces([capabilityPolicyHostFace(), usageHostFace()])
+
+  it('keeps the single package identity every contribution must share', () => {
+    expect(merged.package).toBe(HOST_FACE_PACKAGE)
+    expect(merged.face).toBe('host')
+    expect(usageHostFace().package).toBe(HOST_FACE_PACKAGE)
+    expect(merged.schemas).toEqual([])
+    expect(merged.model).toEqual({ services: [], events: [], objects: [] })
+  })
+
+  it('carries every invocation of both namespaces exactly once', () => {
+    const ids = merged.invocations.map(invocation => invocation.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(ids).toEqual([
+      ...capabilityPolicyHostFace().invocations.map(invocation => invocation.id),
+      ...usageHostFace().invocations.map(invocation => invocation.id),
+    ])
+    const namespaces = new Set(merged.invocations.map(invocation => invocation.namespace))
+    expect([...namespaces].sort()).toEqual(['capabilityPolicy', 'usage'])
+  })
+
+  it('covers exactly the endpoints the browser face asks for', () => {
+    const hostEndpoints = new Set(merged.invocations.map(invocation => `${invocation.namespace}/${invocation.method}`))
+    const clientEndpoints = [
+      ...TYPERT_REMOTE.descriptors.map(descriptor => `${descriptor.namespace}/${descriptor.method}`),
+      ...USAGE_TYPERT_REMOTE.descriptors.map(descriptor => `${descriptor.namespace}/${descriptor.method}`),
+    ]
+    for (const endpoint of clientEndpoints) expect(hostEndpoints.has(endpoint)).toBe(true)
+    expect(hostEndpoints.size).toBe(clientEndpoints.length)
+  })
+
+  it('refuses to merge faces from different packages', () => {
+    const foreign = { ...usageHostFace(), package: 'someone-else' }
+    expect(() => mergeHostFaces([capabilityPolicyHostFace(), foreign])).toThrow(/package mismatch/)
+  })
+
+  it('refuses to merge duplicate invocation ids', () => {
+    expect(() => mergeHostFaces([capabilityPolicyHostFace(), capabilityPolicyHostFace()]))
+      .toThrow(/duplicate invocation/)
   })
 })

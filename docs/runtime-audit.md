@@ -23,11 +23,12 @@ The baseline had:
 - no `ctx.tools.guard()` final denial for budgets;
 - tests hard-coded to POSIX `/tmp`, which caused Windows failures.
 
-## Current implementation changes
+## Current workspace implementation (N6–N7, 2026-11-04)
 
-- Added `src/guard-core.ts` with profile validation, per-Agent/per-Turn state isolation, stable SHA-256 tool signatures, Step / Tool / Time budgets, duplicate detection, and bounded no-progress loop state.
-- Added `src/guard.ts` using public DSH `agent/pre-step`, `agent/turn-stopping`, `tools/result`, `agent/disposed`, and `ctx.tools.guard()` APIs.
-- Added `tests/guard-core.spec.ts`.
+- `src/guard-core.ts` retains legacy profile validation, Agent/Turn state isolation, Step/Tool counters and timing. Budget thresholds do not stop tasks.
+- `src/guard-loop-core.ts` and `src/guard.ts` use bounded per-turn history, SHA-256 tool/result/error fingerprints, 3/5/8 repeat warnings, unchanged A-B cycle warnings, and a single local denial for a later matching call only when no-progress evidence meets the policy. Other calls and the Turn continue.
+- `src/guard.ts` uses public DSH `agent/pre-step`, `tools/result`, `agent/disposed`, and `ctx.tools.guard()` APIs. It does not register `agent/turn-stopping`. Legacy blocking settings and convergence config are compatibility-only and logged/documented as deprecated.
+- `tests/guard-core.spec.ts`, `tests/guard-loop-core.spec.ts`, and `tests/guard.spec.ts` cover core behavior and Host-hook integration.
 - Fixed existing test fixtures to use `node:os` `tmpdir()` and Windows-safe paths.
 - Updated Typert host-face typing to coexist with the installed `TypertRegistryContract` while preserving the legacy manual registration runtime path.
 - Changed the package and runtime bundle identity to `dsh-agent-efficiency-guard`.

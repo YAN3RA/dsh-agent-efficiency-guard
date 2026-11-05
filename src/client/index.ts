@@ -1,9 +1,10 @@
 /**
- * Client (browser) registration of the 能力菜单 settings tab. Follows the real
- * dsh client pattern (`dsh-client-ui-settings-plugin-inventory`): inject the
- * remote face, mount the generated `capabilityPolicy` Typert contribution, and
- * register a `settings.section` (order 12, between `models`=10 and `plugins`=15)
- * whose card renders the classification lists.
+ * Client (browser) registration of this plugin's two settings tabs. Follows the
+ * real dsh client pattern (`dsh-client-ui-settings-plugin-inventory`): inject the
+ * remote face, mount one combined Typert contribution, and register one
+ * `settings.section` per page — `capability` (order 12, between `models`=10 and
+ * `plugins`=15) renders the classification lists, `usage` (order 13) renders the
+ * call-statistics panel on top of the independent `usage` Remote.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -12,22 +13,56 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { createElement, type ReactElement } from 'react'
 import { installSettingsNavIcon } from './settings-nav-icon.ts'
 import { TYPERT_REMOTE } from './remote.ts'
-import { CapabilitySection, type CapabilitySectionInjected, type CapabilityKey } from './CapabilitySection.tsx'
+import { USAGE_TYPERT_REMOTE } from './usage-remote.ts'
+import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
+import { createUsagePanelApi, type UsagePanelRemote } from './usage-adapter.ts'
+import { UsagePanel, type UsagePanelApi } from './usage.tsx'
+import { type CapabilitySectionInjected, type CapabilityKey } from './CapabilitySection.tsx'
+import { PluginSection, type PluginSectionInjected, type PluginSectionKey } from './PluginSection.tsx'
 
 export type { CapabilitySectionInjected, CapabilitySectionProps } from './CapabilitySection.tsx'
 export type { CapabilityKey } from './CapabilitySection.tsx'
 export type { CapabilityRow, CapabilitySnapshot, CapabilityPolicyRemote } from './store.ts'
+export type { UsagePanelApi, UsagePanelSnapshot, UsageQuery } from './usage.tsx'
 
 /** Dictionary namespace owned by this plugin. */
 const NS = 'settings.capability'
+/** Dictionary namespace for the 调用统计 section. */
+const USAGE_NS = 'settings.usage'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** 能力菜单 tab copy. */
     'settings.capability': Record<CapabilityKey, string>
+    /** 调用统计 tab copy. */
+    'settings.usage': Record<UsageKey, string>
   }
+}
+
+/** Copy keys for the 调用统计 section. The panel owns the dense in-page copy. */
+export type UsageKey = 'nav' | 'title' | 'desc'
+
+/** Props injected by the usage `settings.section` registration (see `apply`). */
+export interface UsageSectionInjected {
+  /** Panel data source: maps the `usage` Remote snapshot to the panel view model. */
+  api: UsagePanelApi
+  t(key: UsageKey, params?: Record<string, unknown>): string
+}
+
+export type UsageSectionProps = UsageSectionInjected
+
+/**
+ * The `settings.section` entry for 调用统计.
+ *
+ * `index.ts` is a `.ts` module, so the panel is composed with `createElement`
+ * rather than JSX. The panel keeps all of its rendering rules; this shell only
+ * supplies the adapter-built `api`.
+ */
+export function UsageSection(props: UsageSectionProps): ReactElement {
+  return createElement(UsagePanel, { api: props.api })
 }
 
 /** Required services (cordis fiber inject). `remote.capabilityPolicy` is NOT
@@ -35,6 +70,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
  *  ("waiting for service"). Access it via `ctx.get('remote.capabilityPolicy')`,
  *  which resolves the mounted namespace service without the inject gate. */
 export const inject = ['slots', 'locale', 'remote']
+export const TYPERT_REMOTE_WITH_USAGE: TypertRemoteContribution = {
+  package: TYPERT_REMOTE.package,
+  descriptors: [...TYPERT_REMOTE.descriptors, ...USAGE_TYPERT_REMOTE.descriptors],
+}
+
 
 /** Register the 能力菜单 section once `settings.section` is on the ledger. */
 export async function apply(ctx: ClientContext): Promise<() => void> {
@@ -61,14 +101,14 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     pluginProfileUnavailable: '无法确定当前 DSH profile，请使用 DSH 命令更新。',
     pluginUpdateFailed: '更新失败：',
     desc: '管理工具与技能的暴露策略与检索信息。',
-    resident: 'Resident（常驻上下文）',
-    'on-demand': 'On-demand（按需发现）',
-    disabled: 'Disabled（禁用）',
-    tool: 'tool',
-    skill: 'skill',
-    mandatory: 'meta',
-    toolsGroup: 'Tools',
-    skillsGroup: 'Skills',
+    resident: '常驻上下文',
+    'on-demand': '按需发现',
+    disabled: '禁用',
+    tool: '工具',
+    skill: '技能',
+    mandatory: '元工具',
+    toolsGroup: '工具',
+    skillsGroup: '技能',
     builtInGroup: '系统内置',
     globalSkills: '全局技能',
     projectSkills: '项目技能',
@@ -76,11 +116,11 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     emptyGlobalSkills: '暂无全局技能',
     emptyProjectSkills: '暂无项目技能',
     emptyPresetSkills: '暂无预设技能',
-    filterByName: '按名字、分组或正则过滤…',
-    filterHint: '忽略大小写。匹配工具/技能名、MCP server、技能来源标签与预设 id；也可以直接写正则，例如 cordis|ptc 或 /^mcp__dbx/。',
+    filterByName: '按名称、分组或正则表达式筛选…',
+    filterHint: '忽略大小写。匹配工具/技能名称、MCP 服务器、技能来源标签与预设 ID；也可以输入正则表达式，例如 cordis|ptc 或 /^mcp__dbx/。',
     filterNoMatch: '没有匹配的能力（清空过滤框可恢复完整列表）',
     emptyTools: '暂无工具',
-    emptySkills: '暂无 Skill',
+    emptySkills: '暂无技能',
     toolCount: '{count} 个工具',
     residentShort: '常驻',
     onDemandShort: '按需',
@@ -102,22 +142,22 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     carrierFailureHint: '请求未到达服务端：浏览器与 dsh 之间的连接已断开（Failed to fetch 属传输层失败，服务端方法未执行）。若刚重启过 dsh web，请先硬刷新页面（Ctrl/Cmd+Shift+R）再重试。',
     registerCapability: '注册能力',
     editMcp: '编辑 MCP 服务器',
-    editSkillNamed: '编辑 Skill 目录：{name}',
+    editSkillNamed: '编辑技能目录：{name}',
     edit: '编辑',
     save: '保存',
     remove: '移除',
     cancel: '取消',
     confirmRemove: '确认移除',
-    confirmRemoveMcp: '移除 MCP 服务器「{name}」？其 patch 文件中的配置行（含 headers、环境变量）将被删除，mcp__{name}__* 工具随之消失。',
-    confirmRemoveSkillLink: '移除 Skill「{name}」？仅删除 ~/.dsh/skills 下的软链，源目录不受影响。',
-    confirmRemoveSkillDir: '移除 Skill「{name}」？该项位于 ~/.dsh/skills 下且非软链，将连同文件递归删除，且不可恢复。',
+    confirmRemoveMcp: '移除 MCP 服务器「{name}」？其 patch 文件中的配置行（含请求头、环境变量）将被删除，mcp__{name}__* 工具随之消失。',
+    confirmRemoveSkillLink: '移除技能「{name}」？仅删除 ~/.dsh/skills 下的软链，源目录不受影响。',
+    confirmRemoveSkillDir: '移除技能「{name}」？该项位于 ~/.dsh/skills 下且非软链，将连同文件递归删除，且不可恢复。',
     confirmSaveAnyway: '仍然保存',
     saveConfirmRealDir: '「{name}」这个条目是真实目录、不是软链：保存会先把它连同文件递归删除，再改为指向新路径，且不可恢复。',
     register: '注册',
     notEditable: '该项未在注册表中（可能是项目技能或内置技能），无法编辑。',
     entryNotFound: '目标已不存在，可能已被移除。',
     mcpServers: 'MCP 服务器',
-    skillDirs: 'Skill 目录',
+    skillDirs: '技能目录',
     skillDirPath: '技能来源路径',
     skillRoot: '技能位置',
     skillRootUser: '全局技能（~/.dsh/skills）',
@@ -132,8 +172,8 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     skillSource: '来源：{source}',
     skillSourceHint: '该技能由 dsh 从其它根发现，不在本插件管理的技能目录里，因此没有「编辑」。',
     skillFromPreset: '来自预设 {preset}',
-    skillFromPresetHint: '该技能随 agent preset 分发，只对挂载了该预设的会话可见；不能纳入管理（那会把它软链进全局技能根，对所有会话生效）。',
-    githubImporting: '正在从 GitHub 获取并校验 Skill，完成后会自动注册…',
+    skillFromPresetHint: '该技能随 Agent 预设分发，只对挂载了该预设的会话可见；不能纳入管理（那会把它软链进全局技能根，对所有会话生效）。',
+    githubImporting: '正在从 GitHub 获取并校验技能，完成后会自动注册…',
     importing: '导入中…',
     skillUnmanaged: '未纳入管理',
     sourceCustom: '自定义技能目录',
@@ -142,12 +182,12 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     adoptSkillHint: '仅 user-agents 与 custom 来源可纳入管理；会把它软链进 dsh 的技能根目录（默认 ~/.dsh/skills），内容不动。',
     adoptSkillTitle: '纳入管理「{name}」？',
     skillDirHint: '支持本机目录或公开 GitHub HTTPS 技能链接。GitHub 导入会校验 SKILL.md，并只保留对应技能目录；运行 dsh 的机器需安装 Git。技能名取自 SKILL.md。',
-    serverName: 'serverName',
+    serverName: '服务器名称',
     serverNameImmutable: '名称用于工具 ID 和权限规则，注册后不可更改。',
     transport: '传输方式',
     transportStdio: 'stdio（本地子进程）',
     transportHttp: 'streamable-http（HTTP MCP 端点）',
-    transportHintStdio: '由客户端将该 MCP server 作为子进程启动，JSON-RPC 报文经标准输入 / 输出交换。',
+    transportHintStdio: '由客户端将该 MCP 服务器作为子进程启动，JSON-RPC 报文经标准输入 / 输出交换。',
     transportHintHttp: '客户端通过支持 POST/GET 的 MCP 端点连接。',
     command: '命令',
     args: '参数（空格分隔）',
@@ -155,7 +195,7 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     env: '环境变量',
     url: 'URL',
     headers: '请求头',
-    headersHint: '每行一个 Header，格式 Key: Value；Bearer token 等认证凭据在此填写。',
+    headersHint: '每行一个请求头，格式 Key: Value；Bearer 令牌等认证凭据在此填写。',
     timeout: '超时（秒）',
     timeoutInvalid: '超时须为数字，单位为秒。',
     viewCatalog: '策略与目录',
@@ -180,7 +220,7 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     diagnosticTitle: '能力诊断：{count} 项',
     diagnosticUnavailable: '不可调用：{name}（来源 {source}{preset}）',
     diagnosticShadowed: '同名覆盖：{name} 保留 {winner}，隐藏 {hidden}',
-    diagnosticBroken: '损坏的 preset：{id}（{reason}；受影响技能数量由 DSH 未提供）',
+    diagnosticBroken: '损坏的预设：{id}（{reason}；受影响技能数量由 DSH 未提供）',
     diagnosticUnbrowseable: '不可浏览：{name}（{reason}）',
     diagnosticUndocumented: '描述待补：{name}；摘要回退为「{summary}」',
     projectRootLabel: '项目根：{path}',
@@ -344,7 +384,7 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
   let mountError: string | undefined
   let disposeRemote: (() => Promise<void>) | undefined
   try {
-    disposeRemote = await ctx.remote.$mount(TYPERT_REMOTE)
+    disposeRemote = await ctx.remote.$mount(TYPERT_REMOTE_WITH_USAGE)
   } catch (error) {
     mountError = String(error)
     console.error('[capability-menu] $mount failed:', error)
@@ -418,16 +458,68 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     }
   }
 
+  const usageZh = {
+    nav: '调用统计',
+    title: '调用统计',
+    desc: '统计工具与技能的实际调用次数，不代表 Token 数；覆盖不完整或来源未确认时如实标注，不猜测归属。',
+  } satisfies Record<UsageKey, string>
+  const usageEn = {
+    nav: 'Usage',
+    title: 'Usage',
+    desc: 'Observed tool and skill call counts, never token counts; incomplete coverage and unverified sources are labeled rather than guessed.',
+  } satisfies Record<UsageKey, string>
+  ctx.effect(() => ctx.locale.register(USAGE_NS, { zh: usageZh, en: usageEn }), 'capability-menu: usage dictionaries')
+
+  // Usage descriptors are included in TYPERT_REMOTE_WITH_USAGE above. RemoteStore
+  // rejects a second contribution with the same package, so keep one lifecycle.
+
+  /**
+   * Resolve the mounted usage namespace by key. A property access
+   * (`ctx.remote.usage`) would hit the "without inject" gate because this
+   * plugin mounts the namespace itself; `ctx.get` reads the mounted service.
+   * Structural check instead of a cast: a Host with a different/older face must
+   * fall through to the adapter's explicit "unmounted" error, not throw here.
+   */
+  const usageRemote = (): UsagePanelRemote | undefined => {
+    try {
+      const face = (ctx.get as (key: string) => unknown)('remote.usage')
+      if (typeof face !== 'object' || face === null) return undefined
+      const candidate = face as { getSnapshot?: unknown; refresh?: unknown }
+      if (typeof candidate.getSnapshot !== 'function' || typeof candidate.refresh !== 'function') {
+        return undefined
+      }
+      return face as UsagePanelRemote
+    } catch (error) {
+      console.error('[capability-menu] ctx.get("remote.usage") failed:', error)
+      return undefined
+    }
+  }
+
+  // Stable for the lifetime of the section: the container re-reads on query
+  // changes, and a fresh object each render would re-run its effect forever.
+  const usageApi = createUsagePanelApi(usageRemote)
+
+  // One settings page for the whole plugin, split by capability category. Both
+  // views keep their own Remote subscriptions; `PluginSection` owns only the
+  // category tab bar and the shared chrome.
+  const tabT = ctx.locale.bind(NS) as (key: PluginSectionKey) => string
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'capability',
     order: 12,
     label: () => t('nav'),
     locale: NS,
-    inject: injected,
-  }, CapabilitySection))
+    inject: (): PluginSectionInjected => ({
+      capability: injected(),
+      usageApi,
+      t: tabT,
+    }),
+  }, PluginSection))
 
   return () => {
     disposeRemote?.()
   }
 }
+
+  // Usage descriptors are included in TYPERT_REMOTE_WITH_USAGE above. RemoteStore
+  // rejects a second contribution with the same package, so keep one lifecycle.

@@ -247,6 +247,11 @@ const CLASS_SHORT_KEYS: Record<CapabilityClass, CapabilityKey> = {
 const CSS_ID = 'capability-menu-section-css'
 const CSS = `
 .mc-section{display:flex;flex-direction:column;gap:12px;color:var(--dsw-alias-label-primary)}
+/* One settings page with category tabs on top (PluginSection). The reused
+   views keep .mc-section; only the chrome wrapping them is new. */
+.mc-plugin-section{display:flex;flex-direction:column;gap:14px;min-width:0;color:var(--dsw-alias-label-primary)}
+.mc-plugin-section>.mc-tabs{padding-bottom:0}
+.mc-plugin-section>.mc-panel{padding-top:0}
 .mc-heading{margin:0;font-size:18px;font-weight:600}
 .mc-heading-row{display:flex;align-items:center;gap:12px;min-width:0;flex-wrap:wrap}
 .mc-heading-meta{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}

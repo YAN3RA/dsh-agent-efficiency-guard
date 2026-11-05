@@ -28,9 +28,37 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { CapabilityPolicyGateway } from './server/remote.ts'
 import { registerCapabilityPolicyHostFace } from './host-face.ts'
+import { UsageGateway } from './server/usage-remote.ts'
+import { usageHostFace } from './usage/usage-host-face.ts'
 import * as AgentEfficiencyGuard from './guard.ts'
+import { installUsageRuntime } from './usage/usage-runtime.ts'
 export interface Config {
   guard?: AgentEfficiencyGuard.Config
+  /**
+   * Install the live Session usage runtime on this root entry.
+   *
+   * Enabled by default so existing configurations keep working unchanged. The
+   * runtime is still optional at the Host level: it resolves every optional
+   * service through `ctx.get`, and this root entry declares no static
+   * dependency for it.
+   */
+  usageRuntime?: boolean
+}
+
+/**
+ * Install the usage runtime once per root context and expose the handle as
+ * `ctx.usageRuntime`.
+ *
+ * The runtime owns its listener/effect teardown (`ctx.effect` inside
+ * `installUsageRuntime`), so the root entry must not register a second
+ * disposer. The `ctx.get` check avoids a duplicate subscription when the root
+ * entry is evaluated twice and keeps `ctx.provide` from throwing on an
+ * already-provided name.
+ */
+function installUsageRoot(ctx: Context): void {
+  if (ctx.get('usageRuntime') !== undefined) return
+  const runtime = installUsageRuntime(ctx)
+  ctx.provide('usageRuntime', runtime)
 }
 
 /** Root plugin identity (matches the `capability-menu` patch entry id). */
@@ -48,8 +76,13 @@ export const name = 'agent-efficiency-guard'
  */
 export function apply(ctx: Context, config: Config = {}): void {
   ctx.plugin(CapabilityPolicyGateway)
+  ctx.plugin(UsageGateway)
   ctx.plugin(AgentEfficiencyGuard, config.guard ?? {})
+  if (config.usageRuntime !== false) installUsageRoot(ctx)
   ctx.inject(['typert'], (registry) => {
-    registerCapabilityPolicyHostFace(registry)
+    // One contribution, not two: Typert keys contributions by `package`, and a
+    // second `register()` for an already-mounted package withdraws the first
+    // one's strict definitions (see mergeHostFaces in ./host-face.ts).
+    registerCapabilityPolicyHostFace(registry, [usageHostFace()])
   })
 }

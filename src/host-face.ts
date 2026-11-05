@@ -178,11 +178,66 @@ export function capabilityPolicyHostFace(): TypertHostFace {
 }
 
 /**
- * Claim the `capabilityPolicy` namespace on a host that has a Typert registry.
+ * Merge several host faces owned by the SAME package into one contribution.
+ *
+ * WHY THIS EXISTS — the Typert store keys contributions by `package`, and a
+ * second `register()` for a package that is already mounted withdraws the first
+ * one's strict definitions. The endpoint then stays `hasSeen()` but has no
+ * resolvable definition, so the gateway answers
+ * `gateway/definition-unavailable: … its strict definition was withdrawn and SRC
+ * fallback is forbidden`. Registering `capabilityPolicy` and `usage` as two
+ * separate contributions of `dsh-agent-efficiency-guard` produced exactly that
+ * failure in the production Host (`capabilityPolicy.classifyAll`).
+ *
+ * Merging is safe here because the shapes are disjoint: `schemas` and `model`
+ * are empty on every face this bundle builds, and each invocation id is already
+ * namespaced by package + namespace.
+ */
+export function mergeHostFaces(faces: readonly TypertHostFace[]): TypertHostFace {
+  const [first, ...rest] = faces
+  if (first === undefined) throw new Error('mergeHostFaces: at least one face is required')
+  for (const face of rest) {
+    if (face.package !== first.package) {
+      throw new Error(
+        `mergeHostFaces: package mismatch (${JSON.stringify(first.package)} vs ${JSON.stringify(face.package)})`,
+      )
+    }
+  }
+  const seen = new Set<string>()
+  const invocations: HostFaceInvocation[] = []
+  for (const face of faces) {
+    for (const invocation of face.invocations) {
+      if (seen.has(invocation.id)) throw new Error(`mergeHostFaces: duplicate invocation ${invocation.id}`)
+      seen.add(invocation.id)
+      invocations.push(invocation)
+    }
+  }
+  return {
+    package: first.package,
+    face: 'host',
+    schemas: faces.flatMap((face) => face.schemas),
+    invocations,
+    model: {
+      services: faces.flatMap((face) => face.model.services),
+      events: faces.flatMap((face) => face.model.events),
+      objects: faces.flatMap((face) => face.model.objects),
+    },
+  }
+}
+
+/**
+ * Claim this package's host namespaces on a host that has a Typert registry.
  * Call from a `ctx.inject(['typert'], …)` hook so hosts without the registry are
  * unaffected.
+ *
+ * `extra` are the package's other faces (`usage`); they MUST travel in the same
+ * contribution, see {@link mergeHostFaces} for the withdrawn-definition failure
+ * that two separate registrations cause.
  */
-export function registerCapabilityPolicyHostFace(ctx: Context): void {
+export function registerCapabilityPolicyHostFace(
+  ctx: Context,
+  extra: readonly TypertHostFace[] = [],
+): void {
   const legacyRegistry = ctx.typert as unknown as { register(contribution: TypertHostFace): unknown }
-  legacyRegistry.register(capabilityPolicyHostFace())
+  legacyRegistry.register(mergeHostFaces([capabilityPolicyHostFace(), ...extra]))
 }

@@ -48,6 +48,6 @@ function tscServerFiles(): Plugin {
 export default defineConfig({
   plugins: [tscServerFiles()],
   test: {
-    include: ['tests/**/*.spec.ts'],
+    include: ['tests/**/*.spec.ts', 'tests/**/*.spec.tsx'],
   },
 })

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { createGuardLoopState, type GuardLoopState, type GuardToolOutcome } from './guard-loop-core.ts'
 
 export type GuardProfileName = 'quick' | 'normal' | 'deep'
 
@@ -16,61 +17,72 @@ export interface HostIntegrationConfig {
   readonly provider: 'pi-desktop' | string
   readonly preferHostTokenSaver: boolean
   readonly preferHostPromptCache: boolean
+  /** @deprecated Accepted for compatibility only; no convergence steer is emitted. */
   readonly maxConvergenceSteersPerTurn: number
+  /** @deprecated Accepted for compatibility only; no no-progress stop is applied. */
   readonly maxNoProgressCycles: number
+  /** @deprecated Accepted for compatibility only; never rejects the next step. */
   readonly loopBreakMode: 'stop-next-step'
 }
 
 export interface GuardConfig {
   readonly enabled: boolean
   readonly profile: GuardProfileName
+  /** @deprecated Kept for old configs; validation always resolves to warn-only. */
+  readonly stepLimitMode: 'warn-only' | 'hard-stop'
   readonly duplicateDetection: boolean
+  /** @deprecated Compatibility-only; N7 uses fixed 3/5/8 thresholds. */
   readonly duplicateWarnAfter: number
+  /** @deprecated Accepted for migration only; validated as false. */
   readonly duplicateHardBlock: boolean
   readonly profiles: Readonly<Record<GuardProfileName, GuardProfile>>
   readonly hostIntegration: HostIntegrationConfig
 }
 
 export interface ToolCallObservation {
-  readonly name: string
-  readonly arguments: unknown
   readonly controlPlane?: boolean
-  readonly progress?: boolean
-  readonly resultFingerprint?: string
+  readonly denied?: boolean
 }
 
-export interface RepeatRecord {
-  readonly count: number
-  readonly lastAt: number
+export interface PendingLoopObservation {
+  readonly name: string
+  readonly callId: string
+  readonly dispatchSequence: number
+  readonly epoch: number
+  readonly signature: string
+  readonly outcome: GuardToolOutcome
+  readonly resultFingerprint: string
+}
+
+export interface DispatchRecord {
+  readonly sequence: number
+  readonly epoch: number
+  readonly name: string
+  readonly signature: string
 }
 
 export interface TurnState {
   readonly turn: number
   readonly startedAt: number
-  readonly repeatedSignatures: Map<string, RepeatRecord>
+  loopEpoch: number
+  nextDispatchSequence: number
+  nextLoopSequence: number
+  loopDetectionDisabled: boolean
+  readonly userMessageIds: Set<string>
+  readonly dispatchRecords: Map<string, DispatchRecord>
+  readonly pendingLoopObservations: Map<number, PendingLoopObservation | null>
+  loopState: GuardLoopState
+  readonly pendingBlockSignatures: Set<string>
+  readonly blockedLoopSignatures: Set<string>
+  readonly deniedCallIds: Set<string>
+  localLoopDenials: number
+  readonly loopWarnings: Set<string>
   modelSteps: number
   businessToolCalls: number
-  softWarningSent: boolean
-  finalizationHintSent: boolean
-  convergenceSteers: number
-  noProgressCycles: number
-  duplicateWarningSent: boolean
-  progressSinceStop: boolean
-  hardStopped: boolean
   lastActivityAt: number
-  lastProgressFingerprint?: string
 }
 
-export type GuardDecision =
-  | { readonly kind: 'allow' }
-  | { readonly kind: 'deny'; readonly reason: string; readonly code: 'step-budget' | 'tool-budget' | 'time-budget' | 'no-progress-loop' }
-
-export interface ObservationResult {
-  readonly decision: GuardDecision
-  readonly duplicateCount: number
-  readonly shouldWarn: boolean
-  readonly shouldConverge: boolean
-}
+export type GuardDecision = { readonly kind: 'allow' }
 
 export const DEFAULT_GUARD_PROFILES: Readonly<Record<GuardProfileName, GuardProfile>> = {
   quick: {
@@ -112,6 +124,7 @@ export const DEFAULT_HOST_INTEGRATION: HostIntegrationConfig = {
 export const DEFAULT_GUARD_CONFIG: GuardConfig = {
   enabled: true,
   profile: 'normal',
+  stepLimitMode: 'warn-only',
   duplicateDetection: true,
   duplicateWarnAfter: 2,
   duplicateHardBlock: false,
@@ -144,11 +157,11 @@ export function validateGuardConfig(input: Partial<GuardConfig> = {}): GuardConf
   if (input.profile !== undefined && !['quick', 'normal', 'deep'].includes(input.profile)) {
     throw new Error(`profile must be quick, normal, or deep`)
   }
+  if (input.stepLimitMode !== undefined && !['warn-only', 'hard-stop'].includes(input.stepLimitMode)) {
+    throw new Error('stepLimitMode must be warn-only or hard-stop')
+  }
   const duplicateWarnAfter = input.duplicateWarnAfter ?? DEFAULT_GUARD_CONFIG.duplicateWarnAfter
   assertPositiveInteger('duplicateWarnAfter', duplicateWarnAfter)
-  if (input.duplicateHardBlock === true && input.duplicateDetection === false) {
-    throw new Error('duplicateHardBlock requires duplicateDetection')
-  }
   const host = { ...DEFAULT_HOST_INTEGRATION, ...(input.hostIntegration ?? {}) }
   assertPositiveInteger('hostIntegration.maxConvergenceSteersPerTurn', host.maxConvergenceSteersPerTurn)
   assertPositiveInteger('hostIntegration.maxNoProgressCycles', host.maxNoProgressCycles)
@@ -156,6 +169,11 @@ export function validateGuardConfig(input: Partial<GuardConfig> = {}): GuardConf
   return {
     ...DEFAULT_GUARD_CONFIG,
     ...input,
+    enabled: input.enabled ?? DEFAULT_GUARD_CONFIG.enabled,
+    profile: input.profile ?? DEFAULT_GUARD_CONFIG.profile,
+    duplicateDetection: input.duplicateDetection ?? DEFAULT_GUARD_CONFIG.duplicateDetection,
+    stepLimitMode: 'warn-only',
+    duplicateHardBlock: false,
     profiles,
     duplicateWarnAfter,
     hostIntegration: host,
@@ -180,16 +198,21 @@ export class GuardStateStore {
     const state: TurnState = {
       turn,
       startedAt: now,
-      repeatedSignatures: new Map(),
+      loopEpoch: 0,
+      nextDispatchSequence: 0,
+      nextLoopSequence: 0,
+      loopDetectionDisabled: false,
+      userMessageIds: new Set(),
+      dispatchRecords: new Map(),
+      pendingLoopObservations: new Map(),
+      loopState: createGuardLoopState(turn),
+      pendingBlockSignatures: new Set(),
+      blockedLoopSignatures: new Set(),
+      deniedCallIds: new Set(),
+      localLoopDenials: 0,
+      loopWarnings: new Set(),
       modelSteps: 0,
       businessToolCalls: 0,
-      softWarningSent: false,
-      finalizationHintSent: false,
-      convergenceSteers: 0,
-      noProgressCycles: 0,
-      duplicateWarningSent: false,
-      progressSinceStop: false,
-      hardStopped: false,
       lastActivityAt: now,
     }
     this.states.set(agent, state)
@@ -208,10 +231,6 @@ export class GuardStateStore {
   clear(agent: object): void {
     this.states.delete(agent)
   }
-
-  clearIfTurn(agent: object, turn: number): void {
-    if (this.states.get(agent)?.turn === turn) this.states.delete(agent)
-  }
 }
 
 export class EfficiencyGuard {
@@ -223,120 +242,35 @@ export class EfficiencyGuard {
     this.states = states
   }
 
-  profile(): GuardProfile {
-    return this.config.profiles[this.config.profile]
+  resetLoopState(agent: object): void {
+    const state = this.states.get(agent)
+    if (state === undefined) return
+    state.loopEpoch += 1
+    state.nextDispatchSequence = 0
+    state.nextLoopSequence = 0
+    state.loopDetectionDisabled = false
+    state.dispatchRecords.clear()
+    state.pendingLoopObservations.clear()
+    state.loopState = createGuardLoopState(state.turn)
+    state.pendingBlockSignatures.clear()
+    state.blockedLoopSignatures.clear()
+    state.deniedCallIds.clear()
+    state.localLoopDenials = 0
+    state.loopWarnings.clear()
   }
 
   admitStep(agent: object, turn: number, now = Date.now()): GuardDecision {
     if (!this.config.enabled) return { kind: 'allow' }
     const state = this.states.getOrBegin(agent, turn, now)
-    const profile = this.profile()
-    if (state.hardStopped) return { kind: 'deny', code: 'no-progress-loop', reason: 'No-progress loop stopped this turn. Start a new turn to continue.' }
-    if (state.modelSteps >= profile.hardSteps) {
-      state.hardStopped = true
-      return { kind: 'deny', code: 'step-budget', reason: 'Step budget reached. The current task may be incomplete.' }
-    }
-    if (now - state.startedAt >= profile.hardDurationMs) {
-      state.hardStopped = true
-      return { kind: 'deny', code: 'time-budget', reason: 'Time budget reached. The current task may be incomplete.' }
-    }
     state.modelSteps += 1
     state.lastActivityAt = now
     return { kind: 'allow' }
   }
-  admitTool(agent: object, turn: number, now = Date.now()): GuardDecision {
-    if (!this.config.enabled) return { kind: 'allow' }
-    const state = this.states.get(agent)
-    if (state?.turn !== turn) return { kind: 'allow' }
-    const profile = this.profile()
-    if (state.hardStopped) return { kind: 'deny', code: 'no-progress-loop', reason: 'No-progress loop stopped this turn. Start a new turn to continue.' }
-    if (state.businessToolCalls >= profile.hardToolCalls) {
-      state.hardStopped = true
-      return { kind: 'deny', code: 'tool-budget', reason: 'Tool budget reached for this turn. Use existing results and summarize.' }
-    }
-    if (now - state.startedAt >= profile.hardDurationMs) {
-      state.hardStopped = true
-      return { kind: 'deny', code: 'time-budget', reason: 'Time budget reached. The current task may be incomplete.' }
-    }
-    return { kind: 'allow' }
-  }
-
-
-  observeTool(agent: object, turn: number, observation: ToolCallObservation, now = Date.now()): ObservationResult {
+  observeTool(agent: object, turn: number, observation: ToolCallObservation, now = Date.now()): void {
+    if (!this.config.enabled) return
     const state = this.states.getOrBegin(agent, turn, now)
-    const profile = this.profile()
-    if (observation.controlPlane) return { decision: { kind: 'allow' }, duplicateCount: 0, shouldWarn: false, shouldConverge: false }
-    if (state.hardStopped) {
-      return { decision: { kind: 'deny', code: 'no-progress-loop', reason: 'No-progress loop stopped this turn. Start a new turn to continue.' }, duplicateCount: 0, shouldWarn: false, shouldConverge: false }
-    }
-    if (now - state.startedAt >= profile.hardDurationMs) {
-      state.hardStopped = true
-      return { decision: { kind: 'deny', code: 'time-budget', reason: 'Time budget reached. The current task may be incomplete.' }, duplicateCount: 0, shouldWarn: false, shouldConverge: false }
-    }
-    if (state.businessToolCalls >= profile.hardToolCalls) {
-      state.hardStopped = true
-      return { decision: { kind: 'deny', code: 'tool-budget', reason: 'Tool budget reached for this turn. Use existing results and summarize.' }, duplicateCount: 0, shouldWarn: false, shouldConverge: false }
-    }
-    const signature = toolSignature(observation.name, observation.arguments)
-    const previous = state.repeatedSignatures.get(signature)
-    const duplicateCount = (previous?.count ?? 0) + 1
-    state.repeatedSignatures.set(signature, { count: duplicateCount, lastAt: now })
+    if (observation.denied || observation.controlPlane) return
     state.businessToolCalls += 1
     state.lastActivityAt = now
-    if (observation.progress === true || observation.resultFingerprint !== undefined) {
-      const fingerprint = observation.resultFingerprint ?? `${observation.name}:${state.businessToolCalls}`
-      if (state.lastProgressFingerprint !== fingerprint) {
-        state.noProgressCycles = 0
-        state.lastProgressFingerprint = fingerprint
-      }
-    }
-    const shouldWarn = this.config.duplicateDetection && duplicateCount >= this.config.duplicateWarnAfter
-    const shouldConverge = state.businessToolCalls >= profile.softToolCalls || now - state.startedAt >= profile.softDurationMs
-    return { decision: { kind: 'allow' }, duplicateCount, shouldWarn, shouldConverge }
-  }
-
-  noteToolResult(agent: object, turn: number, name: string, result: unknown, now = Date.now()): void {
-    const state = this.states.get(agent)
-    if (state?.turn !== turn) return
-    const fingerprint = toolSignature(name, result)
-    if (state.lastProgressFingerprint === fingerprint) return
-    state.lastProgressFingerprint = fingerprint
-    state.progressSinceStop = true
-    state.lastActivityAt = now
-  }
-
-  needsConvergence(agent: object, turn: number, now = Date.now()): boolean {
-    const state = this.states.get(agent)
-    if (state?.turn !== turn) return false
-    const profile = this.profile()
-    return state.modelSteps >= profile.softSteps || state.businessToolCalls >= profile.softToolCalls || now - state.startedAt >= profile.softDurationMs
-  }
-
-  noteTurnStopping(agent: object, turn: number, progressed: boolean, convergenceRequested = false, now = Date.now()): { shouldSteer: boolean; shouldStop: boolean } {
-    const state = this.states.getOrBegin(agent, turn, now)
-    const hadProgress = progressed || state.progressSinceStop
-    if (hadProgress) state.noProgressCycles = 0
-    else state.noProgressCycles += 1
-    state.progressSinceStop = false
-    const shouldStop = convergenceRequested && state.convergenceSteers >= this.config.hostIntegration.maxConvergenceSteersPerTurn &&
-      state.noProgressCycles >= this.config.hostIntegration.maxNoProgressCycles
-    if (shouldStop) {
-      state.hardStopped = true
-      return { shouldSteer: false, shouldStop: true }
-    }
-    const shouldSteer = convergenceRequested && !state.finalizationHintSent && state.convergenceSteers < this.config.hostIntegration.maxConvergenceSteersPerTurn
-    if (shouldSteer) {
-      state.finalizationHintSent = true
-      state.softWarningSent = true
-      state.convergenceSteers += 1
-    }
-    return { shouldSteer, shouldStop: false }
-  }
-
-  markSoftWarningSent(agent: object, turn: number): void {
-    const state = this.states.get(agent)
-    if (state?.turn === turn) state.softWarningSent = true
   }
 }
-
-export const CONVERGENCE_MESSAGE = '本轮执行预算即将用尽。请停止扩展搜索范围，优先使用已有证据完成当前目标；必要的最后一次验证之后请直接总结。未完成或未经验证的部分必须明确说明。'

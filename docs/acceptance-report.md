@@ -2,6 +2,8 @@
 
 Updated: 2026-11-02. Detailed 0.1.7 isolation evidence and limitations: [release-0.1.7/report.md](release-0.1.7/report.md). Version 0.1.8 updates release metadata and documentation only; no runtime source behavior changed.
 
+当前工作区说明（2026-11-05）：N6–N8 未提交源码已重新通过完整本地检查与实际 0.1.8 tarball 隔离 GUI 验收；设置页“调用统计”可加载且 `usage/getSnapshot` HTTP 200。Typert capability 与 usage descriptors 已合并为单一 package mount，避免重复注册。该证据不覆盖生产 profile、真实模型调用、历史回补或完整共存验收；详见 [HANDOFF.md](../HANDOFF.md)。
+
 ## 0.1.8 local checks
 
 - Node.js `v24.22.1`, pnpm `11.28.5`; typecheck/unit tests use locked DSH peers `0.2.1-rc.3`.
