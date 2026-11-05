@@ -18,6 +18,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import type { KeyboardEvent, ReactElement } from 'react'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import * as ClientUiPrimitives from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Input, Modal, SegmentedTabs, Tag, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   CapabilityPolicyRemote,
   CapabilitySnapshot,
@@ -272,13 +273,7 @@ body[data-ds-dark-theme] .mc-feedback-link:focus-visible{outline-color:#96b6d1}
 .mc-update-steps{display:flex;flex-direction:column;gap:8px}
 .mc-update-steps pre{margin:0;padding:10px 12px;border-radius:6px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-size:12px;white-space:pre-wrap;word-break:break-all}
 .mc-summary{display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-end;align-items:center;padding-bottom:8px}
-.mc-catalog-btn{border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:20px;padding:0 10px;cursor:pointer;white-space:nowrap}
-.mc-catalog-btn:hover{border-color:var(--dsw-alias-border-l3);background:var(--dsw-alias-interactive-bg-hover)}
-.mc-heading-actions .mc-catalog-btn{background:transparent}
-.mc-heading-actions .mc-catalog-btn:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.mc-heading-actions .mc-catalog-btn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
 /* 忙碌态靠变淡表示，而不是换文案：换文案会改按钮宽度，把这行挤到第二行。 */
-.mc-catalog-btn:disabled{cursor:default;opacity:.6}
 .mc-catalog-tabs{padding:8px 16px 0}
 .mc-catalog-toolbar{display:flex;align-items:center;gap:12px;padding:8px 16px 0;min-width:0}
 .mc-catalog-toolbar .mc-catalog-path{flex:1 1 auto;min-width:0;padding:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -376,7 +371,6 @@ body[data-ds-dark-theme] .mc-count--disabled{color:#b8abad}
 .mc-dot-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:1px solid transparent;border-radius:999px;background:0 0;cursor:pointer}
 .mc-dot-btn:hover{border-color:var(--dsw-alias-border-l3);background:var(--dsw-alias-interactive-bg-hover)}
 .mc-dot-btn:disabled{cursor:default;opacity:.6;border-color:transparent;background:0 0}
-.mc-tag{font-size:11px;line-height:18px;padding:0 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary)}
 .mc-empty{padding:16px;text-align:center;font-size:13px;color:var(--dsw-alias-label-tertiary);border:1px dashed var(--dsw-alias-border-l2);border-radius:8px}
 .mc-error{padding:12px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;color:var(--dsw-alias-state-error-primary);font-size:13px}
 .mc-error p{margin:0}
@@ -402,7 +396,6 @@ body[data-ds-dark-theme] .mc-count--disabled{color:#b8abad}
 .mc-search-field input,.mc-search-field textarea{box-sizing:border-box;width:100%;padding:7px 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:13px}
 .mc-search-field textarea{min-height:116px;resize:vertical}
 .mc-search-hint{font-size:12px;color:var(--dsw-alias-label-tertiary)}
-.mc-search-restore{margin-right:auto}
 /* A directory has no spaces to break at, and the modal is where it can show in
    full: wrap it instead of truncating it the way a row's 来源 slot must. */
 .mc-confirm-path{font-family:var(--dsw-font-markdown-code-block-font-family);word-break:break-all}
@@ -418,12 +411,7 @@ body[data-ds-dark-theme] .mc-count--disabled{color:#b8abad}
 .mc-tree-icon{flex:none;color:var(--dsw-alias-label-tertiary);display:inline-flex}
 .mc-tree-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mc-tree-file:hover .mc-tree-name{color:var(--dsw-alias-label-primary)}
-.mc-preview-mask{position:fixed;inset:0;background:var(--dsw-alias-bg-mask-2);display:flex;align-items:center;justify-content:center;z-index:1000}
 .mc-preview{width:min(720px,calc(100vw - 48px));max-height:min(560px,calc(100vh - 96px));display:flex;flex-direction:column;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;box-shadow:var(--dsw-alias-bg-mask-drop)}
-.mc-preview-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--dsw-alias-border-l1)}
-.mc-preview-title{font-size:13px;line-height:20px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.mc-preview-close{flex:none;padding:2px 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;cursor:pointer}
-.mc-preview-close:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .mc-preview-body{overflow:auto;flex:1 1 auto;min-height:0;padding:14px 16px;color:var(--dsw-alias-label-primary)}
 .mc-preview-body>pre,.mc-preview-plain{margin:0;font-family:var(--dsw-font-markdown-code-block-font-family);font-size:12px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere}
 .mc-tool-description{padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--dsw-alias-border-l1)}
@@ -587,6 +575,8 @@ export function CapabilitySection(props: CapabilitySectionProps): JSX.Element {
   })
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  /** Transient confirmation text, shown through the official Toast primitive. */
+  const [toast, setToast] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<import('./store.ts').CapabilityDiagnostics | null>(null)
   const [retryMcp, setRetryMcp] = useState<string | null>(null)
   const queuedMcpRefresh = useRef<string | null>(null)
@@ -836,7 +826,10 @@ export function CapabilitySection(props: CapabilitySectionProps): JSX.Element {
       // disabled rule) still wins over the exact id just pinned, so the class
       // did not move to `to`. Surface that instead of failing silently.
       const overridden = ids.filter(id => next.rows.find(r => r.id === id)?.class !== to)
-      setNotice(overridden.length > 0 ? t('cycleOverridden', { count: overridden.length }) : null)
+      // Transient feedback: the user just clicked, and the outcome is only
+      // readable for a moment. Keep the persistent notice slot for messages
+      // that carry an action (the MCP retry below).
+      setToast(overridden.length > 0 ? t('cycleOverridden', { count: overridden.length }) : null)
     } catch (e) {
       setState({ status: 'error', message: String(e) })
     } finally {
@@ -846,6 +839,14 @@ export function CapabilitySection(props: CapabilitySectionProps): JSX.Element {
 
   return (
     <section className="mc-section">
+      {toast !== null && (
+        <Toast
+          text={toast}
+          tone="success"
+          holdMs={4000}
+          onDone={() => setToast(current => (current === toast ? null : current))}
+        />
+      )}
       {state.status === 'loading' && <p className="mc-empty">{t('desc')}…</p>}
       {state.status === 'error' && (
         <div className="mc-error">
@@ -859,7 +860,7 @@ export function CapabilitySection(props: CapabilitySectionProps): JSX.Element {
               be on screen first, so a page that never got one has to be able to
               ask again. */}
           <div className="mc-error-actions">
-            <button type="button" className="mc-catalog-btn" onClick={() => void reload()}>{t('retry')}</button>
+            <Button size="sm" variant="outline" onClick={() => void reload()}>{t('retry')}</Button>
           </div>
         </div>
       )}
@@ -867,9 +868,9 @@ export function CapabilitySection(props: CapabilitySectionProps): JSX.Element {
         <div className="mc-notice">
           <span>{notice}</span>
           {retryMcp !== null && (
-            <button type="button" className="mc-catalog-btn" disabled={refreshing} onClick={() => void refreshRegisteredMcp(retryMcp)}>
+            <Button size="sm" variant="outline" disabled={refreshing} onClick={() => void refreshRegisteredMcp(retryMcp)}>
               {t('retry')}
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -1187,18 +1188,18 @@ function ReadyBody(props: {
           <h2 className="mc-heading">{t('title')}</h2>
           <span className="mc-version" title={PLUGIN_TITLE}>v{PLUGIN_VERSION}</span>
           {updateStatus?.updateAvailable && (updateStatus.updatable || updateStatus.reason === 'local') && updatePhase !== 'done' && (
-            <ClientUiPrimitives.Button type="button" variant="primary" size="sm" className="mc-update-check" title={t('updateAvailable', { version: updateStatus.latest })} disabled={updatePhase === 'installing'} onClick={() => setUpdateDialogOpen(true)}>
+            <Button type="button" variant="primary" size="sm" className="mc-update-check" title={t('updateAvailable', { version: updateStatus.latest })} disabled={updatePhase === 'installing'} onClick={() => setUpdateDialogOpen(true)}>
               {t('newVersion')}
-            </ClientUiPrimitives.Button>
+            </Button>
           )}
         </div>
         <div className="mc-heading-actions">
-          <button type="button" className="mc-catalog-btn" onClick={() => setRegisterOpen(true)}>
+          <Button size="sm" variant="outline" onClick={() => setRegisterOpen(true)}>
             {t('registerCapability')}
-          </button>
-          <button type="button" className="mc-catalog-btn" onClick={() => void openCatalogDocs()}>
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => void openCatalogDocs()}>
             {t('viewCatalog')}
-          </button>
+          </Button>
           <a
             className="mc-feedback-link"
             href="https://github.com/PKUfudawei/dsh-capability-menu"
@@ -1235,28 +1236,16 @@ function ReadyBody(props: {
       )}
 
       <div className="mc-tabs">
-        <div className="mc-tab-group" role="tablist" aria-label={t('title')}>
-          <button
-            type="button"
-            role="tab"
-            className="mc-tab"
-            aria-selected={activeTab === 'tools'}
-            data-active={activeTab === 'tools' ? 'true' : undefined}
-            onClick={() => onTabChange('tools')}
-          >
-            {t('toolsGroup')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className="mc-tab"
-            aria-selected={activeTab === 'skills'}
-            data-active={activeTab === 'skills' ? 'true' : undefined}
-            onClick={() => onTabChange('skills')}
-          >
-            {t('skillsGroup')}
-          </button>
-        </div>
+        <SegmentedTabs
+          className="mc-main-tabs"
+          items={[
+            { value: 'tools', id: 'mc-tab-tools', panelId: 'mc-panel-tools', label: t('toolsGroup') },
+            { value: 'skills', id: 'mc-tab-skills', panelId: 'mc-panel-skills', label: t('skillsGroup') },
+          ]}
+          value={activeTab}
+          onChange={onTabChange}
+          label={t('title')}
+        />
         <div className="mc-summary">
           {summary.map(({ cls, count }) => (
             <span key={cls} className={`mc-chip mc-chip--${cls}`}>
@@ -1276,7 +1265,7 @@ function ReadyBody(props: {
           catalog keeps its plain message. */}
       {snapshot.rows.length > 0 && (
         <div className="mc-filter">
-          <input
+          <Input
             type="search"
             value={filter}
             placeholder={t('filterByName')}
@@ -1287,7 +1276,7 @@ function ReadyBody(props: {
         </div>
       )}
 
-      <div role="tabpanel" hidden={activeTab !== 'tools'} className="mc-panel">
+      <div role="tabpanel" id="mc-panel-tools" aria-labelledby="mc-tab-tools" hidden={activeTab !== 'tools'} className="mc-panel">
         <div className="mc-panel-inner">
           {servers.length === 0 ? (
             <p className="mc-empty">{needle === '' ? t('emptyTools') : t('filterNoMatch')}</p>
@@ -1374,9 +1363,9 @@ function ReadyBody(props: {
                                 : tool.name}
                             </span>
                             <span className="mc-tool-meta">
-                              {tool.mandatory && <span className="mc-tag">{t('mandatory')}</span>}
+                              {tool.mandatory && <Tag>{t('mandatory')}</Tag>}
                               {tool.class === 'on-demand' && (
-                                <button type="button" className="mc-count mc-count--action" title={t('editSearchMetadata')} onClick={(e: { stopPropagation(): void }) => { e.stopPropagation(); void openSearchEdit(tool.id, 'tool') }}>{t('searchMetadataButton')}</button>
+                                <Button size="sm" variant="ghost" className="mc-count--action" title={t('editSearchMetadata')} onClick={(e: { stopPropagation(): void }) => { e.stopPropagation(); void openSearchEdit(tool.id, 'tool') }}>{t('searchMetadataButton')}</Button>
                               )}
                               <button
                                 type="button"
@@ -1406,6 +1395,8 @@ function ReadyBody(props: {
 
       <div
         role="tabpanel"
+        id="mc-panel-skills"
+        aria-labelledby="mc-tab-skills"
         hidden={activeTab !== 'skills'}
         className={`mc-panel${skills.length > 0 ? ' mc-panel--tight' : ''}`}
       >
@@ -1415,38 +1406,16 @@ function ReadyBody(props: {
           ) : (
             <>
               <div className="mc-subtabs">
-                <div className="mc-tab-group" role="tablist" aria-label={t('skillsGroup')}>
-                  <button
-                    type="button"
-                    role="tab"
-                    className="mc-tab"
-                    aria-selected={skillTab === 'global'}
-                    data-active={skillTab === 'global' ? 'true' : undefined}
-                    onClick={() => setSkillTab('global')}
-                  >
-                    {t('globalSkills')}
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    className="mc-tab"
-                    aria-selected={skillTab === 'project'}
-                    data-active={skillTab === 'project' ? 'true' : undefined}
-                    onClick={() => setSkillTab('project')}
-                  >
-                    {t('projectSkills')}
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    className="mc-tab"
-                    aria-selected={skillTab === 'preset'}
-                    data-active={skillTab === 'preset' ? 'true' : undefined}
-                    onClick={() => setSkillTab('preset')}
-                  >
-                    {t('presetSkills')}
-                  </button>
-                </div>
+                <SegmentedTabs
+                  items={[
+                    { value: 'global', id: 'mc-skill-tab-global', panelId: 'mc-skill-panel-global', label: t('globalSkills') },
+                    { value: 'project', id: 'mc-skill-tab-project', panelId: 'mc-skill-panel-project', label: t('projectSkills') },
+                    { value: 'preset', id: 'mc-skill-tab-preset', panelId: 'mc-skill-panel-preset', label: t('presetSkills') },
+                  ]}
+                  value={skillTab}
+                  onChange={setSkillTab}
+                  label={t('skillsGroup')}
+                />
               </div>
               {skillTab === 'global' ? (
                 globalSkills.length > 0 ? (
@@ -1506,14 +1475,12 @@ function ReadyBody(props: {
       </div>
 
       {toolDetail !== null && (
-        <div className="mc-preview-mask" onClick={() => setToolDetail(null)}>
-          <div className="mc-preview" onClick={e => e.stopPropagation()}>
-            <div className="mc-preview-head">
-              <span className="mc-preview-title">{toolDetail.detail?.name ?? toolDetail.id}</span>
-              <button type="button" className="mc-preview-close" onClick={() => setToolDetail(null)}>
-                {t('previewClose')}
-              </button>
-            </div>
+        <Modal
+          open
+          onClose={() => setToolDetail(null)}
+          title={toolDetail.detail?.name ?? toolDetail.id}
+          closeLabel={t('previewClose')}
+        >
             {toolDetail.status === 'loading' && <div className="mc-preview-hint">…</div>}
             {toolDetail.status === 'error' && <div className="mc-preview-hint">{toolDetail.message}</div>}
             {toolDetail.status === 'ready' && toolDetail.detail !== undefined && (
@@ -1532,53 +1499,53 @@ function ReadyBody(props: {
                 }, null, 2)}</pre>
               </div>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
 
       {updateDialogOpen && updateStatus?.updateAvailable && (
-        <div className="mc-preview-mask" onClick={closeUpdateDialog}>
-          <div className="mc-preview mc-update-dialog" role="dialog" aria-modal="true" aria-labelledby="mc-update-title" onClick={e => e.stopPropagation()}>
-            <div className="mc-preview-head">
-              <span id="mc-update-title" className="mc-preview-title">{t('updateDialogTitle')}</span>
-              <button type="button" className="mc-preview-close" disabled={updatePhase === 'installing'} onClick={closeUpdateDialog}>{t('previewClose')}</button>
-            </div>
-            <div className="mc-confirm-body">
-              <p>{t('updateVersionComparison', { current: updateStatus.current, latest: updateStatus.latest })}</p>
-              <p>{t(updateStatus.reason === 'local' ? 'updateLocalNote' : 'updateNpmNote')}</p>
-              {updateStatus.reason === 'local' && sourceStepsOpen && (
-                <div className="mc-update-steps">
-                  <p>{t('updateSourceStepsIntro')}</p>
-                  {updateStatus.sourcePath && <p className="mc-confirm-path">{updateStatus.sourcePath}</p>}
-                  <pre>{'git pull\npnpm install\npnpm run build'}</pre>
-                  <p>{t('updateSourceStepsRestart')}</p>
-                </div>
-              )}
-              {updatePhase === 'installing' && <p role="status">{t('updatingPlugin')}</p>}
-              {updatePhase === 'error' && <p className="mc-error" role="alert">{t('pluginUpdateFailed')} {updateError}</p>}
-              <div className="mc-confirm-actions mc-update-actions">
-                <ClientUiPrimitives.Button type="button" variant="outline" size="sm" className="mc-update-cancel" disabled={updatePhase === 'installing'} onClick={closeUpdateDialog}>{t('cancel')}</ClientUiPrimitives.Button>
+        <Modal
+          open
+          onClose={closeUpdateDialog}
+          title={t('updateDialogTitle')}
+          closeLabel={t('previewClose')}
+          className="mc-update-dialog"
+          footer={(
+            <div className="mc-confirm-actions mc-update-actions">
+                <Button type="button" variant="outline" size="sm" className="mc-update-cancel" disabled={updatePhase === 'installing'} onClick={closeUpdateDialog}>{t('cancel')}</Button>
                 {updateStatus.reason === 'local' && (
-                  <ClientUiPrimitives.Button type="button" variant="outline" size="sm" disabled={updatePhase === 'installing'} onClick={() => setSourceStepsOpen(value => !value)}>
+                  <Button type="button" variant="outline" size="sm" disabled={updatePhase === 'installing'} onClick={() => setSourceStepsOpen(value => !value)}>
                     {t(sourceStepsOpen ? 'updateSourceStepsHide' : 'updateSourceSteps')}
-                  </ClientUiPrimitives.Button>
+                  </Button>
                 )}
-                <ClientUiPrimitives.Button type="button" variant="primary" size="sm" disabled={updatePhase === 'installing'} onClick={() => void installUpdate(updateStatus.reason === 'local' ? 'local' : 'registry')}>
+                <Button type="button" variant="primary" size="sm" disabled={updatePhase === 'installing'} onClick={() => void installUpdate(updateStatus.reason === 'local' ? 'local' : 'registry')}>
                   {t(updateStatus.reason === 'local' ? 'switchAndInstall' : 'installUpdate')}
-                </ClientUiPrimitives.Button>
-              </div>
+                </Button>
             </div>
-          </div>
-        </div>
+          )}
+        >
+          <p>{t('updateVersionComparison', { current: updateStatus.current, latest: updateStatus.latest })}</p>
+          <p>{t(updateStatus.reason === 'local' ? 'updateLocalNote' : 'updateNpmNote')}</p>
+          {updateStatus.reason === 'local' && sourceStepsOpen && (
+            <div className="mc-update-steps">
+              <p>{t('updateSourceStepsIntro')}</p>
+              {updateStatus.sourcePath && <p className="mc-confirm-path">{updateStatus.sourcePath}</p>}
+              <pre>{'git pull\npnpm install\npnpm run build'}</pre>
+              <p>{t('updateSourceStepsRestart')}</p>
+            </div>
+          )}
+          {updatePhase === 'installing' && <p role="status">{t('updatingPlugin')}</p>}
+          {updatePhase === 'error' && <p className="mc-error" role="alert">{t('pluginUpdateFailed')} {updateError}</p>}
+        </Modal>
       )}
 
       {searchEdit !== null && (
-        <div className="mc-preview-mask" onClick={() => setSearchEdit(null)}>
-          <div className="mc-preview mc-search-dialog" onClick={e => e.stopPropagation()}>
-            <div className="mc-preview-head">
-              <span className="mc-preview-title">{t('editSearchMetadata')} · {searchEdit.id}</span>
-              <button type="button" className="mc-preview-close" onClick={() => setSearchEdit(null)}>{t('previewClose')}</button>
-            </div>
+        <Modal
+          open
+          onClose={() => setSearchEdit(null)}
+          title={`${t('editSearchMetadata')} · ${searchEdit.id}`}
+          closeLabel={t('previewClose')}
+          className="mc-search-dialog"
+        >
             {searchEdit.status === 'loading' && <div className="mc-preview-hint">…</div>}
             {searchEdit.status === 'error' && <div className="mc-preview-hint">{searchEdit.message}</div>}
             {searchEdit.status === 'ready' && (
@@ -1594,14 +1561,13 @@ function ReadyBody(props: {
                 {searchEdit.message !== undefined && <p className="mc-error">{searchEdit.message}</p>}
                 <div className="mc-confirm-actions">
                   {searchDescription !== searchEdit.metadata?.defaultDescription && (
-                    <button type="button" className="mc-preview-close mc-search-restore" disabled={searchSaving} title={t('searchMetadataRestoreHint')} onClick={() => setSearchDescription(searchEdit.metadata?.defaultDescription ?? '')}>{t('searchMetadataRestore')}</button>
+                    <Button size="sm" variant="ghost" disabled={searchSaving} title={t('searchMetadataRestoreHint')} onClick={() => setSearchDescription(searchEdit.metadata?.defaultDescription ?? '')}>{t('searchMetadataRestore')}</Button>
                   )}
-                  <button type="button" className="mc-preview-close" disabled={searchSaving} onClick={() => void saveSearchEdit()}>{t('searchMetadataSave')}</button>
+                  <Button size="sm" variant="primary" disabled={searchSaving} onClick={() => void saveSearchEdit()}>{t('searchMetadataSave')}</Button>
                 </div>
               </div>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
 
       {(registerOpen || editMcp !== undefined || editSkill !== undefined) && (
@@ -1627,41 +1593,26 @@ function ReadyBody(props: {
       )}
 
       {catalogDocs !== null && (
-        <div className="mc-preview-mask" onClick={() => setCatalogDocs(null)}>
-          <div className="mc-preview" onClick={e => e.stopPropagation()}>
-            <div className="mc-preview-head">
-              <span className="mc-preview-title">{t('viewCatalog')}</span>
-              <button type="button" className="mc-preview-close" onClick={() => setCatalogDocs(null)}>
-                {t('previewClose')}
-              </button>
-            </div>
+        <Modal
+          open
+          onClose={() => setCatalogDocs(null)}
+          title={t('viewCatalog')}
+          closeLabel={t('previewClose')}
+        >
             {catalogDocs.status === 'loading' && <div className="mc-preview-hint">…</div>}
             {catalogDocs.status === 'error' && <div className="mc-preview-hint">{catalogDocs.message}</div>}
             {catalogDocs.status === 'ready' && (
               <>
                 <div className="mc-subtabs mc-catalog-tabs">
-                  <div className="mc-tab-group" role="tablist" aria-label={t('viewCatalog')}>
-                    <button
-                      type="button"
-                      role="tab"
-                      className="mc-tab"
-                      aria-selected={catalogTab === 'policy'}
-                      data-active={catalogTab === 'policy' ? 'true' : undefined}
-                      onClick={() => setCatalogTab('policy')}
-                    >
-                      {t('catalogPolicy')}
-                    </button>
-                    <button
-                      type="button"
-                      role="tab"
-                      className="mc-tab"
-                      aria-selected={catalogTab === 'catalog'}
-                      data-active={catalogTab === 'catalog' ? 'true' : undefined}
-                      onClick={() => setCatalogTab('catalog')}
-                    >
-                      {t('catalogOnDemand')}
-                    </button>
-                  </div>
+                  <SegmentedTabs
+                    items={[
+                      { value: 'policy', id: 'mc-cat-tab-policy', panelId: 'mc-cat-panel-policy', label: t('catalogPolicy') },
+                      { value: 'catalog', id: 'mc-cat-tab-catalog', panelId: 'mc-cat-panel-catalog', label: t('catalogOnDemand') },
+                    ]}
+                    value={catalogTab}
+                    onChange={setCatalogTab}
+                    label={t('viewCatalog')}
+                  />
                 </div>
                 {catalogTab === 'policy' ? (
                   <>
@@ -1685,7 +1636,7 @@ function ReadyBody(props: {
                         />
                         <span>{t('summaryLimitUnit')}</span>
                         {catalogDocs.docs.searchSettingsEnabled && summaryLimitDraft !== String(catalogDocs.docs.summaryMaxChars) && (
-                          <button type="button" className="mc-preview-close" disabled={summaryLimitSaving} onClick={() => void saveSummaryLimit()}>{t('searchMetadataSave')}</button>
+                          <Button size="sm" variant="primary" disabled={summaryLimitSaving} onClick={() => void saveSummaryLimit()}>{t('searchMetadataSave')}</Button>
                         )}
                         {!catalogDocs.docs.searchSettingsEnabled && <span>{t('summaryLimitDisabled')}</span>}
                       </div>
@@ -1707,8 +1658,7 @@ function ReadyBody(props: {
                 )}
               </>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
     </>
   )
@@ -1888,9 +1838,9 @@ function SkillList(props: {
                 <span className="mc-source" title={skill.path}>{t('projectRootLabel', { path: projectRootForSkill(skill.path) })}</span>
               )}
               <span className="mc-skill-meta">
-                {skill.mandatory && <span className="mc-tag">{t('mandatory')}</span>}
+                {skill.mandatory && <Tag>{t('mandatory')}</Tag>}
                 {skill.class === 'on-demand' && (
-                  <button type="button" className="mc-count mc-count--action" title={t('editSearchMetadata')} onClick={(e: { stopPropagation(): void }) => { e.stopPropagation(); onEditSearch(skill.id) }}>{t('searchMetadataButton')}</button>
+                  <Button size="sm" variant="ghost" className="mc-count--action" title={t('editSearchMetadata')} onClick={(e: { stopPropagation(): void }) => { e.stopPropagation(); onEditSearch(skill.id) }}>{t('searchMetadataButton')}</Button>
                 )}
                 <button
                   type="button"
@@ -1971,16 +1921,13 @@ function SkillList(props: {
         )
       })}
       {confirmAdopt !== null && (
-        <div className="mc-preview-mask" onClick={() => setConfirmAdopt(null)}>
-          <div className="mc-preview mc-confirm-dialog" onClick={e => e.stopPropagation()}>
-            <div className="mc-preview-head">
-              <span className="mc-preview-title">
-                {t('adoptSkillTitle', { name: confirmAdoptRow?.name ?? confirmAdopt })}
-              </span>
-              <button type="button" className="mc-preview-close" onClick={() => setConfirmAdopt(null)}>
-                {t('previewClose')}
-              </button>
-            </div>
+        <Modal
+          open
+          onClose={() => setConfirmAdopt(null)}
+          title={t('adoptSkillTitle', { name: confirmAdoptRow?.name ?? confirmAdopt })}
+          closeLabel={t('previewClose')}
+          className="mc-confirm-dialog"
+        >
             <div className="mc-confirm-body">
               <p>{t('adoptSkillHint')}</p>
               {/* The row gave its 来源 slot to the 纳入管理 button, so the
@@ -1991,9 +1938,9 @@ function SkillList(props: {
                 </p>
               )}
               <div className="mc-confirm-actions">
-                <button
-                  type="button"
-                  className="mc-catalog-btn"
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={() => {
                     const id = confirmAdopt
                     setConfirmAdopt(null)
@@ -2001,22 +1948,19 @@ function SkillList(props: {
                   }}
                 >
                   {t('adoptSkill')}
-                </button>
+                </Button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {preview !== null && (
-        <div className="mc-preview-mask" onClick={() => setPreview(null)}>
-          <div className="mc-preview" onClick={e => e.stopPropagation()}>
-            <div className="mc-preview-head">
-              <span className="mc-preview-title">{preview.relPath}</span>
-              <button type="button" className="mc-preview-close" onClick={() => setPreview(null)}>
-                {t('previewClose')}
-              </button>
-            </div>
+        <Modal
+          open
+          onClose={() => setPreview(null)}
+          title={preview.relPath}
+          closeLabel={t('previewClose')}
+        >
             {preview.content !== undefined ? (
               <div className="mc-preview-body">
                 {/\.md$/i.test(preview.relPath) ? (
@@ -2028,8 +1972,7 @@ function SkillList(props: {
             ) : (
               <div className="mc-preview-hint">{preview.error ?? '…'}</div>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
     </>
   )

@@ -47,6 +47,19 @@ function tscServerFiles(): Plugin {
 
 export default defineConfig({
   plugins: [tscServerFiles()],
+  resolve: {
+    alias: {
+      // The shipped primitives package imports ~20 packages it never declares
+      // (`clsx`, `shiki/*`, `katex`, …) and ships `.module.css`. The DSH client
+      // module loader resolves all of that in production; a Vitest process
+      // cannot. These tests assert OUR shell's contract, never the primitives'
+      // internals, so the specifier is aliased to a faithful stub. See
+      // tests/stubs/ui-primitives.tsx for the mirrored API surface.
+      '@deepseek-ai/dsh-client-ui-primitives': fileURLToPath(
+        new URL('./tests/stubs/ui-primitives.tsx', import.meta.url),
+      ),
+    },
+  },
   test: {
     include: ['tests/**/*.spec.ts', 'tests/**/*.spec.tsx'],
   },

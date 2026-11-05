@@ -8,6 +8,15 @@
 
 ## 当前实现
 
+- **2026-11-05 设置页 UI 原生组件化（P0–P5，未发布）：** 手写的标签/按钮/输入框/弹窗全部改用官方 `@deepseek-ai/dsh-client-ui-primitives`，观感与宿主一致。
+  - P0 标签：`PluginSection`（分类切换）、`CapabilitySection` 主标签与技能子标签、目录文档标签、`LocationModal` 子标签均改用 `SegmentedTabs`（获得 roving tabindex 与左右/Home/End 键盘导航）。
+  - P1 按钮：29+ 处手写 `<button>` 改为 `Button`（`size="sm"`，按语义取 `variant`）。
+  - P2 标签件：`mc-tag`/`mc-chip` 文本改用 `Tag`；usage 的时间范围与能力类型切换改用 `Pill`。**保留** `mc-dot`/`mc-chip--*`/`mc-count--*`：它们是策略层级字形（常驻/按需/禁用，三种不同形状与配色），与 `StateDot` 的生命周期语义不是同一套，强行替换会丢信息。
+  - P3 输入：目录筛选框改用 `Input`（保留原生 `type="search"` 与 aria 属性）。
+  - P4 弹窗：6 处手写 `mc-preview-mask` 遮罩全部改为 `Modal`（获得 portal、背景遮罩、焦点陷阱、Esc 关闭与 aria 接线）；`LocationModal` 同样接入。
+  - P5 提示：跨类覆盖提示改用 `Toast`；带重试按钮的常驻通知保留（官方无 Alert/Callout 组件）。
+  - 清理：删除 14 行已失效的 CSS 规则（`mc-preview-*`、`mc-catalog-btn`、`mc-search-restore`、`mc-tag`）。
+  - **测试基建：** 官方 primitives 包 `import` 了约 20 个未声明的依赖（`clsx`、`shiki/*`、`katex`、`diff`、`simple-icons`、`@deepseek-ai/dsh-client-store` 等）并附带 `.module.css`；生产由 DSH 客户端模块加载器解析，Vitest 无法。`vitest.config.ts` 现将该 specifier 别名到 `tests/stubs/ui-primitives.tsx`（镜像真实 API 子集）。**该 stub 只用于测试，不参与构建。**
 - 安装来源：profile `desktop` 由本地 tarball `file:` 改为 GitHub Release 附件 URL（`.../releases/download/v0.1.9/dsh-agent-efficiency-guard-0.1.9.tgz`）。附件 SHA-1 `fdb26211d0f730d5959606748b291fa09ec616f9` 与本地 tarball 一致。**不要改用 `git+https://` 来源**：仓库不含 `lib/`（构建产物），git 安装会触发 pnpm `prepare` 本地构建，并被 pnpm 构建脚本拦截，需在 `pnpm-workspace.yaml` 的 `allowBuilds` 写入**带 commit sha 的 key**（每次发版都变）；附件 URL 是纯下载，实测 2.3s 且无需 allowlist。后续发版需先上传 tarball 附件，再改依赖 URL。
 
 - 包版本：`0.1.9`；GitHub `v0.1.9` 已发布（tag 与 Release 均指向 `c11e9a8`），CI 在 main 与 tag 上均 success。已安装到本机生产 profile `desktop`。

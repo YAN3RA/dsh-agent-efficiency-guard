@@ -22,6 +22,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, ReactElement } from 'react'
+import { Button, Pill, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** Kinds mirror `src/usage/usage-core.ts`; the wire contract may re-export them. */
 export type UsageCapabilityKind = 'mcp' | 'skill' | 'plugin-tool' | 'native' | 'unknown'
@@ -268,14 +269,14 @@ export function UsagePanelView({
           <span className="mc-version">{activity}</span>
         </div>
         <div className="mc-heading-actions">
-          <button
-            type="button"
-            className="mc-catalog-btn"
+          <Button
+            size="sm"
+            variant="outline"
             disabled={loading || onRefresh === undefined}
             onClick={() => onRefresh?.()}
           >
             刷新
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -288,17 +289,15 @@ export function UsagePanelView({
           {ranges.map(days => {
             const active = query.days === days
             return (
-              <button
+              <Pill
                 key={days}
-                type="button"
-                className="mc-tab"
-                data-active={active}
+                active={active}
                 aria-pressed={active}
                 disabled={!canChange}
                 onClick={() => change({ days })}
               >
                 {`${days} 天`}
-              </button>
+              </Pill>
             )
           })}
         </div>
@@ -332,30 +331,26 @@ export function UsagePanelView({
 
       {kinds.length > 0 && (
         <div className="mc-subtabs" role="group" aria-label="能力类型">
-          <button
-            type="button"
-            className="mc-tab"
-            data-active={query.kind === undefined}
+          <Pill
+            active={query.kind === undefined}
             aria-pressed={query.kind === undefined}
             disabled={!canChange}
             onClick={() => change({ kind: undefined })}
           >
             全部类型
-          </button>
+          </Pill>
           {kinds.map(kind => {
             const active = query.kind === kind
             return (
-              <button
+              <Pill
                 key={kind}
-                type="button"
-                className="mc-tab"
-                data-active={active}
+                active={active}
                 aria-pressed={active}
                 disabled={!canChange}
                 onClick={() => change({ kind })}
               >
                 {usageKindLabel(kind)}
-              </button>
+              </Pill>
             )
           })}
         </div>
@@ -371,9 +366,9 @@ export function UsagePanelView({
           {snapshot !== undefined && <p className="mc-error-hint">显示的是上一次成功读取的数据。</p>}
           {onRefresh !== undefined && (
             <div className="mc-error-actions">
-              <button type="button" className="mc-catalog-btn" disabled={loading} onClick={onRefresh}>
+              <Button size="sm" variant="outline" disabled={loading} onClick={onRefresh}>
                 重试
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -396,7 +391,7 @@ export function UsagePanelView({
             <div className="mc-heading-meta">
               <h3 className="mc-heading" style={{ fontSize: 14 }}>能力调用</h3>
               <span className="mc-version">{`${capabilities.length} 项`}</span>
-              {query.kind !== undefined && <span className="mc-tag">{`类型：${usageKindLabel(query.kind)}`}</span>}
+              {query.kind !== undefined && <Tag>{`类型：${usageKindLabel(query.kind)}`}</Tag>}
             </div>
           </div>
 
@@ -411,10 +406,10 @@ export function UsagePanelView({
                       return (
                         <div className="mc-tool" key={capability.id} style={{ cursor: 'default' }}>
                           <span className="mc-tool-name" title={capability.name}>{capability.name}</span>
-                          <span className="mc-tag">{usageKindLabel(capability.kind)}</span>
+                          <Tag>{usageKindLabel(capability.kind)}</Tag>
                           {source !== undefined && <span className="mc-source" title={source}>{source}</span>}
                           <span className="mc-tool-meta">
-                            <span className="mc-tag">{`${formatUsageCount(capability.calls)} 次`}</span>
+                            <Tag>{`${formatUsageCount(capability.calls)} 次`}</Tag>
                             {(capability.succeeded !== undefined || capability.failed !== undefined) && (
                               <span className="mc-source">
                                 {`成功 ${formatUsageCount(capability.succeeded)} · 失败 ${formatUsageCount(capability.failed)}`}
@@ -422,10 +417,10 @@ export function UsagePanelView({
                             )}
                             <span className="mc-source">{`最近 ${formatUsageTime(capability.lastUsedAt)}`}</span>
                             {capability.status !== undefined && (
-                              <span className="mc-tag">{usageStatusLabel(capability.status)}</span>
+                              <Tag>{usageStatusLabel(capability.status)}</Tag>
                             )}
                             {capability.suggestion !== undefined && (
-                              <span className="mc-tag">{usageSuggestionLabel(capability.suggestion)}</span>
+                              <Tag>{usageSuggestionLabel(capability.suggestion)}</Tag>
                             )}
                           </span>
                         </div>
@@ -469,7 +464,7 @@ function CoverageNotice({ snapshot }: { readonly snapshot: UsagePanelSnapshot })
       style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}
     >
       <div className="mc-counts">
-        <span className="mc-tag">{`覆盖：${usageCoverageLabel(status)}`}</span>
+        <Tag>{`覆盖：${usageCoverageLabel(status)}`}</Tag>
         <span className="mc-source">{coverageRange(coverage)}</span>
         {skippedSessions > 0 && <span className="mc-source">{`跳过 ${formatUsageCount(skippedSessions)} 个会话`}</span>}
         {skippedEvents > 0 && <span className="mc-source">{`跳过 ${formatUsageCount(skippedEvents)} 个事件`}</span>}

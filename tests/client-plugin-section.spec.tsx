@@ -79,9 +79,22 @@ function render(active: 'catalog' | 'usage' = 'catalog'): ReactElement {
 
 const tree = render()
 
-function tabButtons(): TreeNode[] {
+/**
+ * The tab list comes from the official `SegmentedTabs`, which renders the
+ * tablist from its `items` prop rather than from `children`. Expand that one
+ * hook-free component so the walk can see the real `role="tab"` buttons — the
+ * same technique `client-usage.spec.tsx` already uses for nested components.
+ */
+function tabsTreeOf(source: ReactNode): ReactNode {
+  const tabs = find(source, element => String((element.type as { name?: string })?.name) === 'SegmentedTabs')
+  if (tabs === undefined) return null
+  const render = tabs.type as (props: unknown) => ReactNode
+  return render(tabs.props)
+}
+
+function tabButtons(source: ReactNode = tree): TreeNode[] {
   const buttons: TreeNode[] = []
-  walk(tree, (element) => {
+  walk(tabsTreeOf(source), (element) => {
     if (element.props.role === 'tab') buttons.push(element)
   })
   return buttons
@@ -132,11 +145,7 @@ describe('combined settings page', () => {
   })
 
   it('reports the selected category on the tabs', () => {
-    const usageTree = render('usage')
-    const buttons: TreeNode[] = []
-    walk(usageTree, (element) => {
-      if (element.props.role === 'tab') buttons.push(element)
-    })
+    const buttons = tabButtons(render('usage'))
     expect(buttons.map(button => button.props['aria-selected'])).toEqual([false, true])
   })
 })

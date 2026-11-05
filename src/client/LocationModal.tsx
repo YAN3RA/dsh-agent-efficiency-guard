@@ -15,6 +15,8 @@
  * second enable switch here.
  */
 import { useCallback, useMemo, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { Button, Modal, SegmentedTabs } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CapabilityKey } from './CapabilitySection.tsx'
 import {
   unwrapMessage,
@@ -71,7 +73,6 @@ textarea.lm-input{resize:vertical;font-family:var(--dsw-font-markdown-code-block
 .lm-spinner{width:12px;height:12px;flex:none;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-state-business-primary);border-radius:50%;animation:lm-spin .8s linear infinite}
 @keyframes lm-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.lm-spinner{animation-duration:2s}}
-.mc-tab:disabled,.mc-preview-close:disabled{cursor:default;opacity:.6}
 .lm-actions{display:flex;gap:8px;justify-content:flex-end;padding:4px 0 0}
 .lm-actions .lm-btn--remove{margin-right:auto}
 /* Removal is irreversible, so it takes over the action row for one confirmation
@@ -290,76 +291,60 @@ export function LocationModal(props: LocationModalProps): JSX.Element {
           {confirm === 'save' ? t('saveConfirmRealDir', { name: skillLabel }) : removalWarning}
         </p>
         <div className="lm-confirm-actions">
-          <button type="button" className="lm-btn" disabled={busy} onClick={() => setConfirm(null)}>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirm(null)}>
             {t('cancel')}
-          </button>
-          <button
-            type="button"
-            className="lm-btn lm-btn--danger"
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            className="lm-btn--danger"
             disabled={busy}
             onClick={() => { if (confirm === 'save') onSubmit(); else void remove() }}
           >
             {confirm === 'save' ? t('confirmSaveAnyway') : t('confirmRemove')}
-          </button>
+          </Button>
         </div>
       </div>
     )
     : (
       <div className="lm-actions">
         {editing && (
-          <button type="button" className="lm-btn lm-btn--danger lm-btn--remove" disabled={busy} onClick={() => setConfirm('remove')}>
+          <Button size="sm" variant="ghost" className="lm-btn--danger lm-btn--remove" disabled={busy} onClick={() => setConfirm('remove')}>
             {t('remove')}
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
-          className="lm-btn"
+        <Button
+          size="sm"
+          variant="primary"
           disabled={busy}
           onClick={() => { if (needsSaveConfirm) setConfirm('save'); else onSubmit() }}
         >
           {progressMessage !== null ? t('importing') : editing ? t('save') : t('register')}
-        </button>
+        </Button>
       </div>
     )
 
   return (
-    <div className="mc-preview-mask" onClick={busy ? undefined : onClose}>
-      <div className="mc-preview" onClick={e => e.stopPropagation()}>
-        <div className="mc-preview-head">
-          <span className="mc-preview-title">{title}</span>
-          <button type="button" className="mc-preview-close" disabled={busy} onClick={onClose}>
-            {t('previewClose')}
-          </button>
-        </div>
-
-        {!editing && (
-          <div className="mc-subtabs mc-catalog-tabs">
-            <div className="mc-tab-group" role="tablist" aria-label={t('registerCapability')}>
-              <button
-                type="button"
-                role="tab"
-                className="mc-tab"
-                aria-selected={subTab === 'mcp'}
-                data-active={subTab === 'mcp' ? 'true' : undefined}
-                disabled={busy}
-                onClick={() => setSubTab('mcp')}
-              >
-                {t('mcpServers')}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                className="mc-tab"
-                aria-selected={subTab === 'skill'}
-                data-active={subTab === 'skill' ? 'true' : undefined}
-                disabled={busy}
-                onClick={() => setSubTab('skill')}
-              >
-                {t('skillDirs')}
-              </button>
-            </div>
-          </div>
-        )}
+    <Modal
+      open
+      onClose={onClose}
+      title={title}
+      closeLabel={t('previewClose')}
+      className="lm-modal"
+      contentClassName="lm-modal-body"
+      onKeyDownCapture={busy ? (e: ReactKeyboardEvent<HTMLDivElement>) => { if (e.key === 'Escape') e.stopPropagation() } : undefined}
+    >
+      {!editing && (
+        <SegmentedTabs
+          items={[
+            { value: 'mcp', id: 'lm-subtab-mcp', panelId: 'lm-subpanel-mcp', label: t('mcpServers') },
+            { value: 'skill', id: 'lm-subtab-skill', panelId: 'lm-subpanel-skill', label: t('skillDirs') },
+          ]}
+          value={subTab}
+          onChange={setSubTab}
+          label={t('registerCapability')}
+        />
+      )}
 
         <div className="lm-body">
           {errors[subTab] !== undefined && <p className="lm-error">{errors[subTab]}</p>}
@@ -494,8 +479,7 @@ export function LocationModal(props: LocationModalProps): JSX.Element {
               </div>
             )}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
