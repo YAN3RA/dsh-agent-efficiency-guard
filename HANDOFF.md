@@ -1,108 +1,112 @@
 # HANDOFF
 
-更新：2026-11-06 01:55。仓库：`YAN3RA/dsh-agent-efficiency-guard`；分支：`main`。
-本轮基于 **DSH v0.2.2-rc.1** 做兼容适配，并重做了设置页 UI 预览稿。
+更新：2026-11-06 02:45。仓库：`YAN3RA/dsh-agent-efficiency-guard`；分支：`main`；已发布 **v0.1.10**。
 
 ## 当前状态（一句话）
 
-源码已完成 0.2.2-rc.1 兼容修复，`typecheck`（Node + Client）+ 542 项测试 + `build` + `pack` 四项全过；**未提交、未发布**。UI 预览稿 v2 已重做并通过 47 项浏览器断言，**尚未接线到 `src/`**。
+v0.1.10 已提交、已推送、已发布 Release（含 tarball 附件）；本机 profile 已从 `link:` 切回 Release 附件 URL 并安装 0.1.10；**Host 未重启，新 UI 尚未在 GUI 中生效**。
 
-## 一、DSH v0.2.2-rc.1 兼容（本轮完成）
+## 一、本轮完成（五项）
 
-### 1.1 已确认的宿主版本
+### 1. DSH v0.2.2-rc.1 兼容（代码）
 
 | 项 | 值 |
 | --- | --- |
-| `dsh` CLI | `0.2.2-rc.1` |
-| 安装路径 | `C:\Users\yansui\AppData\Local\Programs\DeepSeek Harness`（目录名是空格，**不是**连字符） |
-| 运行时 node / pnpm | `24.21.0` / `11.28.5`（在 `~/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/`） |
+| 本机 dsh CLI | `0.2.2-rc.1` |
+| 安装路径 | `C:\Users\yansui\AppData\Local\Programs\DeepSeek Harness`（**目录名是空格**） |
+| 运行时 node / pnpm | `24.21.0` / `11.28.5` |
 | Cordis | `4.1.0` |
 
-**注意路径陷阱：** `LOCALAPPDATA\Programs` 下该目录名是 `DeepSeek Harness`（空格）。用 `DeepSeek-Harness` 会 ENOENT，但 `Get-ChildItem` 列目录时 PowerShell 会把它显示成连字符形式，容易误判。用 `[System.IO.Directory]::GetDirectories()` 或 `-LiteralPath` 核对真实字符。
+**两个真实破坏点**（升级后编译即失败）：
 
-### 1.2 依赖升级
+1. `ToolsService.execute` 改为批量契约，`ToolBatchInput` 无 `parent`。`meta_invoke` 单次转发改用 `ToolExecutionPipeline`（prepare → dispatch → complete），血缘保留。
+2. `system-prompt/assemble` 不再拥有工具声明（provider 的 `tools` 在水位后被原样贴回）。按需隐藏改由 `agent/created` 时施加的 agent 作用域 `tools.restrict({ deny })`。
 
-`package.json` 的 devDependencies 从 `0.2.1-rc.3` 全部升到 `0.2.2-rc.1`，`@deepseek-ai/cordis` 升 `4.1.0`；peerDependencies 增加 `|| ^0.2.2-rc.1`；`pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 同步改版本。
+**关键回归修复：** `meta_invoke` 转发按全局视图解析本插件分类为 on-demand 的目标，否则「按需工具反而无法 meta_invoke」。别人的 restrict 仍然生效。
 
-### 1.3 两个真实破坏点（升级后编译即失败，非推测）
+**两个必须保留的坑：**
 
-**A. `ToolsService.execute` 改为批量契约。**
-`ToolBatchInput` 为 `{ calls, signal, maxParallelToolCalls?, agent?, toolSet?, log? }`，**没有 `parent` 字段**；返回 `ToolBatchResult = { results, additionalContexts, concluded }`。
-本插件单次转发改用官方 `ToolExecutionPipeline`（`@deepseek-ai/dsh-tools/pipeline`）的 `prepare → dispatch → complete` 三步，`ToolExecutionInput` 仍接受 `parent`，transport sub-dispatch 血缘得以保留。
+- `policy.ts` 的 `applying` 重入守卫不能删。`restrict()`/`dispose()` 都 emit `tools/change`；无守卫会把外层刚装的 mask dispose 掉，导致 **Resident 工具被永久隐藏**。
+- `meta_invoke` 的全局视图回退必须限定在「本插件判定为 on-demand」的名字上。
 
-**B. `system-prompt/assemble` 不再拥有工具声明。**
-事件参数变为 `PromptPresentation = { sections, contexts, variables }`；`SystemPrompt.assemble()` 在跑完 waterfall 后用 `{ ...transformed, tools }` 把 **provider 拥有的** tools 原样贴回。所以旧代码里过滤 `assembly.tools` 已是死代码。
-`projectAssemblyTools` → `projectAssemblySections`，只保留 sections 投影（`tool:web_search` / `tool:web_fetch` 指引）。
+详见 `docs/release-0.2.2/compat-impact.md`（行号已逐条核对）。
 
-### 1.4 On-demand 隐藏改走 `tools.restrict()`（关键，别退回提示词降级）
+### 2. 设置页改为四页签
 
-第一版修复曾判断「0.2.2 下第三方插件无法隐藏他人工具」，**该结论是错的**。核实后的正确机制：
+顺序：**总览 → 思考限制 → 能力目录 → 调用统计**。
 
-- `restrict(filter)` 读 `scopeOf(this.ctx)`，与 `register()` 用**同一机制**；Cordis 在 traced service 调用时把 `this.ctx` 重绑定到调用点。
-- 因此经 `agent.ctx.tools.restrict({ deny })` 施加的限制，绑定到该 agent 的作用域。
-- 该限制同时作用于两条链路：`view(scope)` 的 `admits()` 过滤 → `definitions()`/`schemas()`（**模型声明**）；以及 `resolve()` 构建的 `ResolvedToolSet`（**执行准入**）。
-- 在 bundle 级 `ctx` 上调用会抛 `requires a scoped context (agent.ctx)`——所以必须在 `agent/created` 里做。
-
-实现要点（`src/policy.ts`）：
-
-| 位置 | 作用 |
+| 文件 | 作用 |
 | --- | --- |
-| `policy.ts:742` | `onDemandRestrictions`：每 agent 的 disposer + deny 快照 |
-| `policy.ts:765` | `onDemandDenyNames()`：从**全局视图**取交集，过滤 meta 工具与保留名 `run_code` |
-| `policy.ts:788` | `applying` 重入守卫 |
-| `policy.ts:820` | `reapplyOnDemandRestrictions()` |
-| `policy.ts:828/833/845` | `agent/created` / `agent/disposed` / `tools/change` 接线 |
+| `src/client/PluginSection.tsx` | 四页签外壳，`SegmentedTabs`，面板用 `hidden` 切换保留订阅 |
+| `src/client/OverviewPanel.tsx` | 总览纯视图（无 hook，可被测试遍历） |
+| `src/client/OverviewContainer.tsx` | 总览容器，读真实 usage 快照（7 天口径） |
+| `src/client/GuardPanel.tsx` | 思考限制，A/B/C 三段 + 模型侧标识 |
 
-**两个必须保留的坑（改这块前先读）：**
+- **思考限制**：删除了「当前生效」摘要栏（信息由总览承担，避免两处不同步）。三段标题对用户是中文，同时显示模型侧英文标识 `duplicate_call` / `alternating_cycle` / `no_progress`。
+- **调用统计**：类型标签改为 `原生工具` / `MCP 工具` / `Skills` / `第三方插件`。真实页原本就没有「未完成」「失败率」列，只有成功/失败，无需删除。
+- 顺带修了一个真 bug：`tabCatalog`/`tabUsage` 两个 key 在语言字典里根本不存在，页签标签一直是空字符串。已补齐中英文。
 
-1. **重入守卫不能删。** `restrict()` 和 `dispose()` 都会 emit `tools/change`，会重入施加逻辑。没有 `applying` 守卫时，嵌套那趟会把外层刚装的 mask dispose 掉并留下相交 mask，结果是 **Resident 工具被永久隐藏**。
-2. **`meta_invoke` 转发必须按全局视图查表。** `tools.get(name, agent)` 走 `view(agent)`，被自己施加的限制挡掉后会返回 `undefined`，导致「On-demand 工具反而无法 meta_invoke」的致命回归。`src/invoke.ts:105` 的 `resolveForwardDefinition()` 先查调用方视图，**仅当本插件分类为 on-demand** 时回退全局定义；别人的 restrict 仍然生效。
-
-### 1.5 本轮验证（2026-11-06 01:47 亲自复跑，非转述）
+### 3. 验证（2026-11-06 02:35，亲自复跑）
 
 - `tsc -p tsconfig.json --noEmit` → EXIT=0
 - `tsc -p tsconfig.client.json --noEmit` → EXIT=0
-- `vitest run` → **31 个测试文件 / 542 项全部通过**
-- `pnpm build` → ✔ Build complete in 4224ms
-- `npm pack --dry-run` → 111 files，`lib/` 已更新
+- `vitest run` → **31 个文件 / 546 项全部通过**
+- `pnpm build` → 通过；`npm pack` → 111 files
 
-详细证据与未验证项见 `docs/release-0.2.2/compat-impact.md`（四节 + 行号已逐条核对）。
+### 4. 发布
 
-### 1.6 本轮**未**做的事
+- commit `7babecf`（兼容 + UI）、`f6c7a69`（版本号）
+- tag `v0.1.10` 已推送
+- Release：https://github.com/YAN3RA/dsh-agent-efficiency-guard/releases/tag/v0.1.10
+- 附件：`dsh-agent-efficiency-guard-0.1.10.tgz`（324369 字节，state=uploaded）
 
-- **未 commit / 未 push。** 工作区有 5 个修改文件 + 1 个新增 stub + 1 份新报告。
-- **未重启 Host**，所以 `lib/` 的新代码尚未在运行态生效。profile 是 `link:`，重启后直接生效。
-- 未在真实 Host 验证：`resume`/preset 作用域下 `agent/created` 时序、PTC(`run_code`) 组合、并发多个 `meta_invoke`、与第三方插件 restrict 叠加、0.2.1-rc.3 回退路径。
+### 5. profile 安装来源已切回 Release 附件
 
-## 二、设置页 UI 预览 v2（本轮完成，未接线）
+`~/.dsh/profiles/desktop/package.json` 现为：
 
-按 `docs/design/preview/dsh-agent-efficiency-guard-UI优化方案.md` 重做 `docs/design/preview/index.html`：单页四标签（总览 / 防循环 / 调用统计 / 能力目录），整页可交互。
+```
+"dsh-agent-efficiency-guard": "https://github.com/YAN3RA/dsh-agent-efficiency-guard/releases/download/v0.1.10/dsh-agent-efficiency-guard-0.1.10.tgz"
+```
 
-- 所有 KPI、分类汇总、排行、合计行由**同一份数据源**实时计算，不再是手写常量；排行底部有「口径一致校验」行。
-- 预览工具条可切「数据状态」（正常 / 暂无调用 / 覆盖不足 / 读取失败），四种状态分别展示。
-- 47 项浏览器断言全通过，含：数字自洽、默认 7 天周期、无统计范围选择器、排行数字窄屏不隐藏、KPI 与建议数量差异有解释、折叠报数、深色主题 token 生效。
-- 说明文档：`docs/design/preview/README-preview-v2.md`。
+核实结果：
 
-**`build.py` / `build_html.py` 是 v1 遗留生成器**，会覆盖手写的 `index.html`。已加 `--force` 保护，不带参数运行会拒绝并提示。
+- 安装目录是**实体目录**，不是符号链接（无 `src/`、无 `docs/`，符合 tarball 内容）
+- 版本 `0.1.10`
+- `lib/client.js` SHA256 与本地构建逐字节一致（`993C00F1…109D`）
+- 全部 `lib/**/*.js` 通过 `node --check`
+- `lib/index.js` 只有一次 `registerCapabilityPolicyHostFace(...)` 调用
+
+**安装时必须走代理**：直连 GitHub 会 `ETIMEDOUT`。用 `HTTPS_PROXY=http://127.0.0.1:7890`。
+
+### 6. 清理
+
+已删除：`%TEMP%\css-prune-backup`（3 个 11-05 的 CSS 清理备份）、`%TEMP%\tgz-trash-latest`（0.1.7/0.1.8 旧包）、仓库内 `dsh-agent-efficiency-guard-0.1.9.tgz`。删除前已核对路径与文件清单。
+
+## 二、未完成 / 未验证（必须知道）
+
+1. **Host 未重启，新 UI 尚未生效。** Host 于 1:52 启动，而安装产物构建于 2:39。GUI 里现在看到的仍是旧两页签。重启 DSH 后才会看到四页签。
+2. **未做真实 GUI 视觉回归。** 四页签切换、思考限制开关、总览真实数据、深色主题，均未在真实 Host GUI 中确认。
+3. **思考限制的开关目前是只读呈现。** `GuardPanel` 的 `onToggle`/`onReset` 尚未接到 Remote：Guard 配置目前只来自 patch 文件，没有读写它的 Remote 方法。要真正可改，需要新增一个 Guard 配置 Remote（读写 patch 或独立状态文件）。**这是本轮明确未做的功能，不是 bug。**
+4. **总览的 Guard 状态未接真实配置**，`guardEnabled`/`duplicateThresholds`/`tiers` 目前未传入，因此显示 `—`。等第 3 项的 Remote 落地后再接。
+5. 未验证：`resume`/preset 作用域下 `agent/created` 时序、PTC(`run_code`) 组合、并发多个 `meta_invoke`、与第三方 restrict 叠加、0.2.1-rc.3 回退路径。
+6. `meta_invoke` 单次转发不再经过所选 executor 的调度器（并发分类、`maxParallelToolCalls`），单次转发无影响但语义不完全等价。
 
 ## 三、下一轮可执行项
 
-1. **重启 Host 做生产验证** — 打开 设置 → 插件，确认四类行为：能力目录能列出 On-demand 工具、`meta_invoke` 能转发 On-demand 工具、Disabled 仍硬拒、Guard 提醒正常。成本 5 分钟。这是本轮唯一未闭环的验收项，建议先做。
-2. **确认 UI 预览稿** — 打开 `docs/design/preview/index.html` 审阅，确认后再决定是否接线到 `plugin/src/client/`。成本 10 分钟。
-3. **提交与发布 v0.1.10** — commit → `npm version 0.1.10` → 四项验证 → `npm pack` → 传 Release 附件 → 建 tag 与 Release。成本 15 分钟。依赖第 1 项。
-4. **改回安装来源** — 发布后把 profile 依赖从 `link:` 换回 Release 附件 URL。成本 3 分钟。依赖第 3 项。
-5. **清理临时残留** — `.tmp-ui/`（asar 版本提取脚本、release notes）、`%TEMP%\css-prune-backup`、`%TEMP%\tgz-trash-latest`、`docs/design/preview/.cdp-profile*`。成本 1 分钟，破坏性操作，删除前确认。
+1. **重启 DSH 验证四页签 UI** — 打开 设置 → 插件，确认顺序为 总览 / 思考限制 / 能力目录 / 调用统计，四页均可切换，深浅色可读。成本 3 分钟。这是唯一未闭环的验收项。
+2. **给思考限制接真实读写** — 新增 Guard 配置 Remote（`getGuardConfig` / `updateGuardConfig`），把 `GuardPanel` 的开关与总览的 Guard 状态接上。成本 1–2 小时。做完后思考限制页才真正可操作。
+3. **总览接入 Guard 与策略统计** — 依赖第 2 项，接 `guardEnabled`、`duplicateThresholds`、`tiers`。成本 30 分钟。
+4. **UI 预览稿同步** — `docs/design/preview/index.html` 已按同一套改动更新（56 项断言通过），但与真实页仍有差异（真实页无「未完成/失败率」列）。成本 10 分钟，可选。
+5. **清理 `lib/` 与 node_modules 之外残留** — 仓库内 `dsh-agent-efficiency-guard-0.1.10.tgz` 是发布产物，`.gitignore` 已忽略，确认无需保留后可删。成本 1 分钟。
 
-## 四、安装来源选择（沿用上轮结论）
+## 四、网络与推送规程（本轮实测）
 
-| 方案 | 结果 |
-| --- | --- |
-| `git+https://…#vX.Y.Z` | **不适用**：仓库不含 `lib/`，会触发 pnpm `prepare` 本地构建并被拦截。 |
-| Release 附件 URL | **推荐用于发布**：`.../releases/download/v<版本>/dsh-agent-efficiency-guard-<版本>.tgz`，纯下载、无需 allowlist。 |
-| `link:` 指向仓库 | **仅本机开发**：改动即时生效；代价是未提交改动直接进生产运行态。 |
+- 直连 GitHub `push` 与 `pnpm install` 都可能超时；**代理 `http://127.0.0.1:7890` 可用**。
+- 推送前先 `git ls-remote origin refs/heads/main` 比对；**超时不等于失败**。
+- 推送命令：`git -c http.proxy=http://127.0.0.1:7890 push origin main --tags`，并在同一 shell 里 `unset HTTPS_PROXY HTTP_PROXY` 避免叠加。
+- GitHub API 可用：从 `git credential fill` 取 token，`Authorization: Bearer <token>`。`gh` CLI 本机未安装。
 
 ## 五、工作区与安全边界
 
-- 默认不触碰 `~/.dsh/profiles/desktop`；本轮未改 profile。
 - 不提交 `node_modules/`、`lib/`、临时 `.tgz`、测试缓存、本机 profile、Session、凭据或原始日志。
-- 推送前先 `git ls-remote origin refs/heads/main` 比对远端 SHA——**超时不等于失败**，本轮上次会话已实测过。优先用 `git -c http.proxy=http://127.0.0.1:7890 push`。
+- 本轮变更了 `~/.dsh/profiles/desktop/package.json` 的依赖来源（已授权）；备份在 `%TEMP%\profile-package.json.bak-v0110`。
