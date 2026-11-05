@@ -11,6 +11,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { ToolExecutionPipeline } from '@deepseek-ai/dsh-tools/pipeline'
 import { isModelInvocable, renderSkillContent, type SkillResourceBase } from '@deepseek-ai/dsh-skill'
 
 export const name = 'capability-menu-invoke'
@@ -87,6 +88,33 @@ export function apply(ctx: Context, config: Config = {}): void {
   // WeakMap lets entries be collected with the agent. Without an agent context
   // (headless dispatch) nothing is cached.
   const loadedSkills = new WeakMap<object, Set<string>>()
+
+  // Shared invocation pipeline used for the nested forward. `ToolsService.execute`
+  // is batch-only in 0.2.2 and its `ToolBatchInput` has no `parent`, so a single
+  // sub-dispatch goes through the same stages the native executor uses.
+  //
+  // The source override keeps On-demand targets reachable. The policy hides them
+  // with an agent-scoped `tools.restrict({ deny })` (see `src/policy.ts`), which
+  // removes them from `view(agent)` — and the default lookup,
+  // `tools.executable(name, scope, toolSet)`, reads exactly that view. Without
+  // the fallback every On-demand forward would fail as UNKNOWN_TOOL. The
+  // fallback is limited to names THIS policy classifies as On-demand, so a
+  // restriction placed by someone else still denies the call. Execution still
+  // carries `agent`, `signal`, and `parent`, so scope, pre-execute policy,
+  // guards, and event attribution are unchanged.
+  const resolveForwardDefinition = (name: string, scope: unknown, toolSet: unknown) => {
+    const visible = ctx.tools.executable(name, scope as never, toolSet as never)
+    if (visible !== undefined) return visible
+    const policy = ctx.get('capabilityPolicy')
+    if (policy?.classifyTool(name) !== 'on-demand') return undefined
+    // Registered definitions only: the step's admission set belongs to the
+    // caller's view, which this policy just masked.
+    return ctx.tools.get(name)
+  }
+
+  const pipeline = new ToolExecutionPipeline(ctx, {
+    get: (name, scope, toolSet) => resolveForwardDefinition(name, scope, toolSet),
+  })
 
   const tool = defineTool({
     name: 'meta_invoke',
@@ -199,10 +227,11 @@ export function apply(ctx: Context, config: Config = {}): void {
       // harness-native tool cataloged under the built-in server) — or resolve its
       // schema.
       if (capability.kind === 'tool') {
-        // On-demand tools are omitted from the prompt assembly, not from the
-        // caller's tool view. Resolve in that view so session restrictions and
-        // preset-scoped definitions apply to both resolve and execution.
-        const definition = ctx.tools.get(capability.name, exec.agent)
+        // Resolve the target the same way the forward does: the caller's view
+        // first, then — only for a name this policy classified On-demand — the
+        // registered definition, because the policy itself masked that name out
+        // of the caller's view. Every other restriction still reads as absent.
+        const definition = resolveForwardDefinition(capability.name, exec.agent, exec.toolSet)
         if (definition === undefined) {
           throw new Error(`meta_invoke: tool "${capability.name}" is not available`)
         }
@@ -240,14 +269,28 @@ export function apply(ctx: Context, config: Config = {}): void {
         // risks turning a legitimate call into a wrong one (see issue #10).
         const envelope = envelopeDiagnostic(forwarded, capability.name, definition.parameters)
         if (envelope !== undefined) throw new Error(envelope)
-        const result = await ctx.tools.execute({
+        //
+        // 0.2.2 moved `ToolsService.execute` to a batch contract
+        // (`ToolBatchInput` has no `parent`), so the single-call forward goes
+        // through the same shared pipeline the native executor uses:
+        // `prepare → dispatch → complete`. `ToolExecutionInput` still accepts
+        // `parent`, which is what keeps this a transport sub-dispatch.
+        const prepared = await pipeline.prepare({
           callId: ToolCallId(`${exec.callId}:meta:${id}`),
+          rootCallId: exec.rootCallId,
           name: capability.name,
           arguments: forwarded,
           signal: exec.signal,
           parent: exec.token,
           agent: exec.agent,
+          ...exec.toolSet === undefined ? {} : { toolSet: exec.toolSet },
         })
+        const outcome = prepared.kind === 'dispatch' ? await pipeline.dispatch(prepared.exec) : prepared
+        const result = await pipeline.complete(prepared.exec, outcome)
+        // Nested context and turn conclusion belong to the enclosing
+        // meta_invoke result, exactly like any other composite tool.
+        for (const context of result.additionalContexts ?? []) exec.deferContext(context)
+        if (result.concludesTurn === true) exec.concludeTurn()
         if (result.isError) {
           const message = result.content.map(block => block.type === 'text' ? block.text : `[${block.type} content]`).join('\n')
           throw new Error(message || `meta_invoke: ${capability.name} failed`)

@@ -1,159 +1,108 @@
 # HANDOFF
 
-更新：2026-11-05 22:15。仓库：`YAN3RA/dsh-agent-efficiency-guard`；分支：`main`。
+更新：2026-11-06 01:55。仓库：`YAN3RA/dsh-agent-efficiency-guard`；分支：`main`。
+本轮基于 **DSH v0.2.2-rc.1** 做兼容适配，并重做了设置页 UI 预览稿。
 
 ## 当前状态（一句话）
 
-源码与远端已同步在 `de35c99`；本机 `desktop` profile 以 `link:` 指向仓库并运行当前构建；`typecheck` + 542 项测试 + `build` 全通过。**未发布 0.1.10，Release 与 tag 停在 0.1.9。**
+源码已完成 0.2.2-rc.1 兼容修复，`typecheck`（Node + Client）+ 542 项测试 + `build` + `pack` 四项全过；**未提交、未发布**。UI 预览稿 v2 已重做并通过 47 项浏览器断言，**尚未接线到 `src/`**。
 
-## 关键事实（下次接手先看这里）
+## 一、DSH v0.2.2-rc.1 兼容（本轮完成）
 
-### 1. 推送不可靠，但**不是**丢失——重推前必须先核对远端
+### 1.1 已确认的宿主版本
 
-本机到 GitHub 的写通道**间歇性不可用**，且表现不一致，已观测到三种形态：
-
-| 时刻 | 直连 | 代理 `127.0.0.1:7890` | 结果 |
-| --- | --- | --- | --- |
-| 本轮会话中途 | 超时 | 超时 | 当时判定“失败”，**实际已落地**（远端后来显示为 `45f9350`） |
-| 22:15 首次重推 | `Failed to connect … after 21s` | 未试 | 失败 |
-| 22:20 改进重推 | — | 成功 | `45f9350..de35c99` |
-
-结论与操作规程：
-
-1. **超时不等于失败。** git 可能已把对象推上去、只是在等响应时超时。重试前先跑 `git ls-remote origin refs/heads/main` 比对远端 SHA 与本地 `HEAD`；相同即已完成，不要重复推。
-2. **读通不代表写通，反之亦然。** 同一时刻 `ls-remote` 可能成功而 `push` 失败（TLS 握手 complete 后无进展）；22:15 直连 `ls-remote` 也失败过，而改走代理后两者都成功。因此不要根据一次探测就断言“网络没问题”或“网络坏了”。
-3. **优先用代理推。** 本轮成功的一次是 `git -c http.proxy=http://127.0.0.1:7890 push origin main`。直连时务必先 `unset HTTPS_PROXY HTTP_PROXY`，避免环境变量与 `-c` 配置叠加。
-4. **加超时，不要挂着跑。** 用 `timeout 240 git … push`；本轮多次出现前台命令被托管到后台作业后长时间无输出。
-5. 凭据可用（`git credential fill` 能返回 token），无需手工提供。GitHub API 回退脚本本轮试过但**未能推进 ref**，未保留，不建议再走这条路。
-
-当前同步状态：本地与远端均为 `de35c99`，工作区干净。
-
-### 2. 安装来源已由 Release 附件改为本地 `link:`
-
-`~/.dsh/profiles/desktop/package.json` 当前为：
-
-```
-"dsh-agent-efficiency-guard": "link:C:/Users/yansui/Documents/agent workspace/dsh-agent-efficiency-guard/plugin"
-```
-
-含义与代价：
-
-- DSH 加载的是**仓库里的 `lib/`**，不是 tarball 解压产物。改源码后必须 `pnpm build`，Host 重启才会看到新代码。
-- 未提交的本地改动会**直接进入生产运行态**；提交前建议先确认 Host 处于预期状态。
-- 换机、挪动仓库目录都会让该依赖失效。发布给他人时不能沿用这个形式。
-- 已核实链接目标健康：`lib/client.js` 含新 UI（`SegmentedTabs`/`PluginSectionView`），`lib/index.js` 仍是单次 `registerCapabilityPolicyHostFace(registry, [usageHostFace()])`，且 `lib/` 比 `src/` 新（构建不过期）。
-
-**发布版本时**（下节）应改回 Release 附件 URL；理由见下方“安装来源选择”。
-
-### 3. 本轮已完成：设置页 UI 原生组件化（P0–P5）
-
-提交 `45f9350`，把插件设置页从手写 HTML + 自建 `.mc-*` 样式表迁到官方 `@deepseek-ai/dsh-client-ui-primitives`。
-
-| 阶段 | 改动 |
+| 项 | 值 |
 | --- | --- |
-| P0 | 分类栏、主标签、技能子标签、目录文档标签、`LocationModal` 子标签 → `SegmentedTabs`（获得 roving tabindex 与左右/Home/End 导航） |
-| P1 | 29+ 处手写 `<button>` → `Button`（`size="sm"`，按语义取 `variant`） |
-| P2 | `mc-tag` 文本 → `Tag`；usage 时间范围与能力类型切换 → `Pill` |
-| P3 | 目录筛选框 → `Input`（保留 `type="search"` 与 aria） |
-| P4 | 6 处 `mc-preview-mask` 遮罩 + `LocationModal` → `Modal`（portal、焦点陷阱、Esc、aria） |
-| P5 | 跨类覆盖提示 → `Toast`；带重试按钮的常驻通知保留（官方无 Alert/Callout 组件） |
-| 清理 | 删除 14 行失效 CSS（`mc-preview-*`、`mc-catalog-btn`、`mc-search-restore`、`mc-tag`） |
+| `dsh` CLI | `0.2.2-rc.1` |
+| 安装路径 | `C:\Users\yansui\AppData\Local\Programs\DeepSeek Harness`（目录名是空格，**不是**连字符） |
+| 运行时 node / pnpm | `24.21.0` / `11.28.5`（在 `~/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/`） |
+| Cordis | `4.1.0` |
 
-**刻意未迁移（下次不要“顺手”改掉）：**
+**注意路径陷阱：** `LOCALAPPDATA\Programs` 下该目录名是 `DeepSeek Harness`（空格）。用 `DeepSeek-Harness` 会 ENOENT，但 `Get-ChildItem` 列目录时 PowerShell 会把它显示成连字符形式，容易误判。用 `[System.IO.Directory]::GetDirectories()` 或 `-LiteralPath` 核对真实字符。
 
-- `mc-dot` / `mc-chip--*` / `mc-count--*` 编码的是**策略层级字形**（常驻=实心圆、按需=半填充、禁用=斜线），与 `StateDot` 的生命周期语义（done/warning/ongoing/error/idle）不是同一套。替换会丢失形状区分。本轮已实际读 CSS 后确认，非推测。
-- 官方库**没有** Card、表格、树、Alert、进度条、布局/栅格、Select、Textarea、骨架屏。这些必须继续手写。参考插件（`dsh-cost-meter` 零 primitive、`dsh-better-sidebar` 仅 3 个）也印证这是既定惯例。
-- `mc-tab-group` 仍有一处 live 引用（usage 时间范围组的容器 div），未清理。
+### 1.2 依赖升级
 
-### 4. 测试基建：官方 primitives 的上游打包缺陷
+`package.json` 的 devDependencies 从 `0.2.1-rc.3` 全部升到 `0.2.2-rc.1`，`@deepseek-ai/cordis` 升 `4.1.0`；peerDependencies 增加 `|| ^0.2.2-rc.1`；`pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 同步改版本。
 
-`@deepseek-ai/dsh-client-ui-primitives` 内部 `import` 了约 20 个**未声明**的依赖（`clsx`、`shiki/*`、`katex`、`diff`、`simple-icons`、`@deepseek-ai/dsh-client-store` 等），并附带 `.module.css`。生产由 DSH 客户端模块加载器解析，Vitest 无法。
+### 1.3 两个真实破坏点（升级后编译即失败，非推测）
 
-处理方式：`vitest.config.ts` 将该 specifier 别名到 `tests/stubs/ui-primitives.tsx`，后者镜像真实 API 子集。**该 stub 仅测试用，不进构建**；构建产物经核实仍正确 external 到真实包。
+**A. `ToolsService.execute` 改为批量契约。**
+`ToolBatchInput` 为 `{ calls, signal, maxParallelToolCalls?, agent?, toolSet?, log? }`，**没有 `parent` 字段**；返回 `ToolBatchResult = { results, additionalContexts, concluded }`。
+本插件单次转发改用官方 `ToolExecutionPipeline`（`@deepseek-ai/dsh-tools/pipeline`）的 `prepare → dispatch → complete` 三步，`ToolExecutionInput` 仍接受 `parent`，transport sub-dispatch 血缘得以保留。
 
-这属于上游问题。若未来要提 issue，可附：包名 + 版本 `0.2.1-rc.3` + 上述未声明依赖清单。
+**B. `system-prompt/assemble` 不再拥有工具声明。**
+事件参数变为 `PromptPresentation = { sections, contexts, variables }`；`SystemPrompt.assemble()` 在跑完 waterfall 后用 `{ ...transformed, tools }` 把 **provider 拥有的** tools 原样贴回。所以旧代码里过滤 `assembly.tools` 已是死代码。
+`projectAssemblyTools` → `projectAssemblySections`，只保留 sections 投影（`tool:web_search` / `tool:web_fetch` 指引）。
 
-## 验证记录（2026-11-05 22:12 复跑）
+### 1.4 On-demand 隐藏改走 `tools.restrict()`（关键，别退回提示词降级）
 
-- `pnpm typecheck`：Node + Client 两套通过。
-- `pnpm test`：31 个测试文件、542 项全部通过。
-- `pnpm build`：通过（`lib/` 生成于 22:11，晚于全部 `src/`）。
-- `npm pack --dry-run`：111 个文件。
+第一版修复曾判断「0.2.2 下第三方插件无法隐藏他人工具」，**该结论是错的**。核实后的正确机制：
 
-## 历史记录（本轮之前，保留原文）
+- `restrict(filter)` 读 `scopeOf(this.ctx)`，与 `register()` 用**同一机制**；Cordis 在 traced service 调用时把 `this.ctx` 重绑定到调用点。
+- 因此经 `agent.ctx.tools.restrict({ deny })` 施加的限制，绑定到该 agent 的作用域。
+- 该限制同时作用于两条链路：`view(scope)` 的 `admits()` 过滤 → `definitions()`/`schemas()`（**模型声明**）；以及 `resolve()` 构建的 `ResolvedToolSet`（**执行准入**）。
+- 在 bundle 级 `ctx` 上调用会抛 `requires a scoped context (agent.ctx)`——所以必须在 `agent/created` 里做。
 
-## 当前范围
+实现要点（`src/policy.ts`）：
 
-本包面向 DSH，使用 DSH 插件公开接口。插件负责 DSH 能力目录、按需检索/调用和 Agent/Turn 执行保护；DSH 宿主负责模型、Provider、推理强度和完整会话；Save Token 负责工具结果压缩与原文恢复。
+| 位置 | 作用 |
+| --- | --- |
+| `policy.ts:742` | `onDemandRestrictions`：每 agent 的 disposer + deny 快照 |
+| `policy.ts:765` | `onDemandDenyNames()`：从**全局视图**取交集，过滤 meta 工具与保留名 `run_code` |
+| `policy.ts:788` | `applying` 重入守卫 |
+| `policy.ts:820` | `reapplyOnDemandRestrictions()` |
+| `policy.ts:828/833/845` | `agent/created` / `agent/disposed` / `tools/change` 接线 |
 
-## 当前实现
+**两个必须保留的坑（改这块前先读）：**
 
-- **2026-11-05 设置页 UI 原生组件化（P0–P5，未发布）：** 手写的标签/按钮/输入框/弹窗全部改用官方 `@deepseek-ai/dsh-client-ui-primitives`，观感与宿主一致。
-  - P0 标签：`PluginSection`（分类切换）、`CapabilitySection` 主标签与技能子标签、目录文档标签、`LocationModal` 子标签均改用 `SegmentedTabs`（获得 roving tabindex 与左右/Home/End 键盘导航）。
-  - P1 按钮：29+ 处手写 `<button>` 改为 `Button`（`size="sm"`，按语义取 `variant`）。
-  - P2 标签件：`mc-tag`/`mc-chip` 文本改用 `Tag`；usage 的时间范围与能力类型切换改用 `Pill`。**保留** `mc-dot`/`mc-chip--*`/`mc-count--*`：它们是策略层级字形（常驻/按需/禁用，三种不同形状与配色），与 `StateDot` 的生命周期语义不是同一套，强行替换会丢信息。
-  - P3 输入：目录筛选框改用 `Input`（保留原生 `type="search"` 与 aria 属性）。
-  - P4 弹窗：6 处手写 `mc-preview-mask` 遮罩全部改为 `Modal`（获得 portal、背景遮罩、焦点陷阱、Esc 关闭与 aria 接线）；`LocationModal` 同样接入。
-  - P5 提示：跨类覆盖提示改用 `Toast`；带重试按钮的常驻通知保留（官方无 Alert/Callout 组件）。
-  - 清理：删除 14 行已失效的 CSS 规则（`mc-preview-*`、`mc-catalog-btn`、`mc-search-restore`、`mc-tag`）。
-  - **测试基建：** 官方 primitives 包 `import` 了约 20 个未声明的依赖（`clsx`、`shiki/*`、`katex`、`diff`、`simple-icons`、`@deepseek-ai/dsh-client-store` 等）并附带 `.module.css`；生产由 DSH 客户端模块加载器解析，Vitest 无法。`vitest.config.ts` 现将该 specifier 别名到 `tests/stubs/ui-primitives.tsx`（镜像真实 API 子集）。**该 stub 只用于测试，不参与构建。**
-- 安装来源（**已过期，见本文档开头“关键事实”第 2 条**）：profile `desktop` 曾由本地 tarball `file:` 改为 GitHub Release 附件 URL（`.../releases/download/v0.1.9/dsh-agent-efficiency-guard-0.1.9.tgz`），附件 SHA-1 `fdb26211d0f730d5959606748b291fa09ec616f9` 与本地 tarball 一致；现该依赖已是 `link:` 指向仓库。三种来源的取舍与实测结论见“安装来源选择”一节。
+1. **重入守卫不能删。** `restrict()` 和 `dispose()` 都会 emit `tools/change`，会重入施加逻辑。没有 `applying` 守卫时，嵌套那趟会把外层刚装的 mask dispose 掉并留下相交 mask，结果是 **Resident 工具被永久隐藏**。
+2. **`meta_invoke` 转发必须按全局视图查表。** `tools.get(name, agent)` 走 `view(agent)`，被自己施加的限制挡掉后会返回 `undefined`，导致「On-demand 工具反而无法 meta_invoke」的致命回归。`src/invoke.ts:105` 的 `resolveForwardDefinition()` 先查调用方视图，**仅当本插件分类为 on-demand** 时回退全局定义；别人的 restrict 仍然生效。
 
-- 包版本：`0.1.9`；GitHub `v0.1.9` 已发布（tag 与 Release 均指向 `c11e9a8`），CI 在 main 与 tag 上均 success。已安装到本机生产 profile `desktop`。
-- **2026-11-05 本轮修复（待 Host 重载生效）：** `capabilityPolicy.classifyAll` 在生产 Host 报 `gateway/definition-unavailable: … its strict definition was withdrawn and SRC fallback is forbidden`。根因是同一 package `dsh-agent-efficiency-guard` 被 `register()` 两次（`capabilityPolicyHostFace` 与 `usageHostFace` 各一次），Typert 按 package 键控，第二次注册撤销了第一次的 strict definition，端点保持 `hasSeen()` 却无法解析。修复：新增 `mergeHostFaces()` 把两个 face 合成单一 contribution，`src/index.ts` 只调用一次 `registerCapabilityPolicyHostFace(registry, [usageHostFace()])`。回归用例见 `tests/host-face.spec.ts`（merged host face 5 项）与 `tests/client-plugin-section.spec.tsx`。
-- **2026-11-05 设置页合并：** 原来 `capability`(12) 与 `usage`(13) 两个 `settings.section` 合成一个（仍 id `capability`、order 12），由新的 `src/client/PluginSection.tsx` 提供功能分类标签（能力目录 / 调用统计），两个视图都保持挂载（`hidden` 切换）以保留各自 Remote 订阅。`src/client/index.ts` 不再注册第二个 section。
-- 能力菜单支持 Native/MCP Tools 与 Skills 目录、`meta_search` / `meta_invoke`、Resident / On-demand / Disabled 策略、筛选/详情、MCP/Skill 来源管理、检索元数据和诊断。
-- N6 去掉预算硬停止与按软阈值收尾/steer；Step/Tool/Duration 计数仅作统计。旧 `stepLimitMode: hard-stop` 归一为 `warn-only`，`duplicateHardBlock: true` 归一为 `false`，保留弃用日志。
-- N7 源码已接入 callId dispatch 序号缓冲、polling/exclusion 配置、动态 `metaTools()`、真实 user inbox reset、独立 Guard message source 和拒绝结果回灌排除；dispatch/pending history 上限 64，溢出时 loop detection fail-open。白名单独立复审对当前源码快照结论为 `pass`，不代表生产运行态或可发布产物通过。
-- N8 已接入公开 `session/event` 实时采集（有界微批）、独立只读 `usage` Remote 与设置页统计面板；原始报告经有界白名单投影，UI 按窗口/工作区/能力类型聚合，并对 unavailable/unknown coverage 保持显式状态。受限历史 backfill 已接入 runtime：先订阅实时事件，再并行读有界历史页；队列在历史状态合并前保持有界等待，之后再折叠实时事件；队列达上限时取消/作废回补结果并优先处理实时事件。已修复取消后复用旧 Promise、`open()` 漏传 signal、合法短页误判、fork 子会话继承前缀被重复统计、预算跳过 Session 未标 coverage、Host aggregate DTO 到 500 行后静默裁切，以及 teardown 注册失败的监听器泄漏；排序承诺限定为微批内，跨 tick 重排由 collector coverage 标记。历史原因计数与实时 collector 诊断分离。collector 和 cursor 仍只在内存，不能宣称跨重启恢复或 profile-local 落盘。
-- Workspace 只在 registry 明确映射时标记 `current-mapping`，缺失/歧义为 `unknown`；`profileContext` 的 `ProfileContext` 类型在上游 `@deepseek-ai/dsh-app-boot` rc.3 起存在并含 `name`/`dir`，但本插件未声明该依赖，当前 `name` 仍是 best-effort 标签，Host 运行态注入与 launcher 覆盖尚未独立验证。未知 profile 禁用回补。没有从 cwd 推断 workspace。
-- 默认回补预算为 8 Sessions / 每 Session 2,000 events / 总计 10,000 events / 每页 100 / 5 秒；cursor 仅保存 profile hash 与 Session id、offset、revision，当前只是调用方持有的内存对象，尚未持久化。
-- 已发现上游公开 durable KV 候选 `ctx.storageDomain`；storage 与 storage-domain 仅在 lockfile 中作为 `dsh-workspace` peer 依赖出现，插件 `package.json` 未声明也未安装它们。当前 DSH 默认 base bundle 将 JSON backend root 配为 `dshHomePath('storages')`，是 `$DSH_HOME` 级共享目录，不是 profile-local；插件无法从公开 API 读取 backend/root，且默认域 API 不接受 profile/path。因此继续暂停落盘，维持 memory-only，不能声称跨 profile 隔离或跨重启恢复。隔离 Host 的进程内挂载状态尚未直接探测。
+### 1.5 本轮验证（2026-11-06 01:47 亲自复跑，非转述）
 
-## 本轮验证
+- `tsc -p tsconfig.json --noEmit` → EXIT=0
+- `tsc -p tsconfig.client.json --noEmit` → EXIT=0
+- `vitest run` → **31 个测试文件 / 542 项全部通过**
+- `pnpm build` → ✔ Build complete in 4224ms
+- `npm pack --dry-run` → 111 files，`lib/` 已更新
 
-- `pnpm typecheck`：Node 与 Client 两套 TypeScript 配置均通过。
-- `pnpm test`：30 个测试文件、531 项全部通过；Usage runtime 29 项、backfill 24 项、Host usage Remote 25 项，覆盖 fork prefix、budget coverage、aggregate/coverage/error-count caps、`__proto__` 对象键及 Map 精确/超限边界与取消单飞，并断言客户端只 mount 一份合并 Remote contribution。
-- `pnpm build`：通过，生成客户端 bundle 与声明文件。
-- `npm pack --dry-run`：通过，包版本 `0.1.8`、111 个文件；未生成需保留的归档。
-- 隔离验收：在独立 `$DSH_HOME` 的 `guard-smoke` 安装重新构建的 `0.1.8` tarball（111 个文件，SHA-1 `0eacbdde9e2067b2dd7131dc67c7f569fb82f856`）。真实 Host 插件页显示该插件启用且 5/5 组件运行；设置 → 调用统计正常渲染，`usage/getSnapshot` 返回 HTTP 200，点击刷新后再次返回 HTTP 200；页面显示覆盖未知提示，未出现 Remote 未挂载错误，浏览器未记录页面异常。原因是 capability 与 usage Remote 各自以同一 package 注册，Typert Store 拒绝重复包；现合并 descriptors 并只 mount 一次。隔离 Host 未登录且未配置 API Key，因此未测试真实模型/会话调用或历史回补；本结果不是生产兼容性或发布验收。隔离 Host 与浏览器会话已停止，临时 profile 保留未清理。
-- N7 的独立复审结论仅适用于当时源码快照，不代表 Host 运行态或发布验收。
+详细证据与未验证项见 `docs/release-0.2.2/compat-impact.md`（四节 + 行号已逐条核对）。
 
-## 本轮验证（2026-11-05 02:09）
+### 1.6 本轮**未**做的事
 
-- `pnpm typecheck`：Node + Client 两套均通过。
-- `pnpm test`：31 个测试文件、542 项全部通过（新增 5 项 merged host face、6 项 combined settings page）。
-- `pnpm build`：通过。
-- `npm pack`：111 个文件，包版本 `0.1.8`，tarball SHA-1 `f0f4250cae53f6e98b55cefa0bdaea400d207362`。
-- 已安装到本机生产 profile `desktop`（`file:` 依赖指向该 tarball）。安装产物校验：全部 `lib/**/*.js` 通过 `node --check`；`lib/index.js` 只调用一次 `registerCapabilityPolicyHostFace(registry, [usageHostFace()])`；独立加载 `lib/host-face.js` 后 `mergeHostFaces` 产出 26 个 invocation、package 为 `dsh-agent-efficiency-guard`；`lib/client.js` 中 `settings.section` 注册只剩 1 处（id `capability`）。
-- **重启后复验（2026-11-05 15:34 重启，PID 22220）：** Host 启动正常（`boot-state ok:true`、`crashReason:null`）；插件已在新 Host 中加载（`capability-menu-policy.json` 于 15:44 被写入）；`desktop` profile 中的 `lib/` 与仓库构建逐字节一致；`lib/index.js` 只有一次 `registerCapabilityPolicyHostFace(registry, [usageHostFace()])`；进程内建 merged face 自检 6/6 通过（单一 package、无重复 invocation id、`classifyAll` 与 `getSnapshot` 均在列、2 namespace / 2 service）。
-- **仍未直接断言「Remote 返回 200」：** Web 网关对所有 `/api/*` 统一返回 401（连不存在的 namespace 也是 401），认证依赖进程内存中的签名 cookie secret，因此无法从外部区分「未注册」与「需认证」。需要用户在 GUI 的 设置 → 能力菜单 / 调用统计 页面确认。
+- **未 commit / 未 push。** 工作区有 5 个修改文件 + 1 个新增 stub + 1 份新报告。
+- **未重启 Host**，所以 `lib/` 的新代码尚未在运行态生效。profile 是 `link:`，重启后直接生效。
+- 未在真实 Host 验证：`resume`/preset 作用域下 `agent/created` 时序、PTC(`run_code`) 组合、并发多个 `meta_invoke`、与第三方插件 restrict 叠加、0.2.1-rc.3 回退路径。
 
-## 未完成 / 未验证
+## 二、设置页 UI 预览 v2（本轮完成，未接线）
 
-- **未发布 0.1.10。** tag 与 Release 停在 `v0.1.9`（`v0.1.9` 指向 `c11e9a8`），不含本轮 UI 组件化。`package.json` 版本仍是 `0.1.9`。
-- **未做生产 GUI 视觉回归。** `Select`/`Textarea`/表格/统计条等未迁移部分、以及 `Modal` 的焦点陷阱与 Esc 行为，均未在真实 Host GUI 中确认。这是本轮风险最高、覆盖最弱的一环。
-- `SettingsForm` 家族（`SettingsValueField`/`SettingsSecretField`）**未实测**。从其文档注释推断是“暂存-保存”模型，与本插件即时写入语义可能不符，故本轮未采用；该判断是推断而非实测结论。
-- N7/N8 的历史边界项（`businessToolCalls` 计数口径、usage collector 与 Guard 计数不等价、profile-local persistence 未实现）见下文与 `docs/`，本轮未动。
+按 `docs/design/preview/dsh-agent-efficiency-guard-UI优化方案.md` 重做 `docs/design/preview/index.html`：单页四标签（总览 / 防循环 / 调用统计 / 能力目录），整页可交互。
 
-## 安装来源选择（发布时决策依据，已实测）
+- 所有 KPI、分类汇总、排行、合计行由**同一份数据源**实时计算，不再是手写常量；排行底部有「口径一致校验」行。
+- 预览工具条可切「数据状态」（正常 / 暂无调用 / 覆盖不足 / 读取失败），四种状态分别展示。
+- 47 项浏览器断言全通过，含：数字自洽、默认 7 天周期、无统计范围选择器、排行数字窄屏不隐藏、KPI 与建议数量差异有解释、折叠报数、深色主题 token 生效。
+- 说明文档：`docs/design/preview/README-preview-v2.md`。
+
+**`build.py` / `build_html.py` 是 v1 遗留生成器**，会覆盖手写的 `index.html`。已加 `--force` 保护，不带参数运行会拒绝并提示。
+
+## 三、下一轮可执行项
+
+1. **重启 Host 做生产验证** — 打开 设置 → 插件，确认四类行为：能力目录能列出 On-demand 工具、`meta_invoke` 能转发 On-demand 工具、Disabled 仍硬拒、Guard 提醒正常。成本 5 分钟。这是本轮唯一未闭环的验收项，建议先做。
+2. **确认 UI 预览稿** — 打开 `docs/design/preview/index.html` 审阅，确认后再决定是否接线到 `plugin/src/client/`。成本 10 分钟。
+3. **提交与发布 v0.1.10** — commit → `npm version 0.1.10` → 四项验证 → `npm pack` → 传 Release 附件 → 建 tag 与 Release。成本 15 分钟。依赖第 1 项。
+4. **改回安装来源** — 发布后把 profile 依赖从 `link:` 换回 Release 附件 URL。成本 3 分钟。依赖第 3 项。
+5. **清理临时残留** — `.tmp-ui/`（asar 版本提取脚本、release notes）、`%TEMP%\css-prune-backup`、`%TEMP%\tgz-trash-latest`、`docs/design/preview/.cdp-profile*`。成本 1 分钟，破坏性操作，删除前确认。
+
+## 四、安装来源选择（沿用上轮结论）
 
 | 方案 | 结果 |
 | --- | --- |
-| `git+https://…#vX.Y.Z` | **不适用**：仓库不含 `lib/`（构建产物），会触发 pnpm `prepare` 本地构建，并被 pnpm 拦截构建脚本，需在 `pnpm-workspace.yaml` 的 `allowBuilds` 写**带 commit sha 的 key**（每次发版都变）。 |
-| Release 附件 URL | **推荐用于发布**：`https://github.com/YAN3RA/dsh-agent-efficiency-guard/releases/download/v<版本>/dsh-agent-efficiency-guard-<版本>.tgz`。纯下载，实测 2.3 秒完成，无需 allowlist。发版时须先上传 tarball 附件，再改依赖 URL。 |
-| `link:` 指向仓库 | **仅适合本机开发**：改动即时生效、无需发版；代价见上文第 2 条。 |
+| `git+https://…#vX.Y.Z` | **不适用**：仓库不含 `lib/`，会触发 pnpm `prepare` 本地构建并被拦截。 |
+| Release 附件 URL | **推荐用于发布**：`.../releases/download/v<版本>/dsh-agent-efficiency-guard-<版本>.tgz`，纯下载、无需 allowlist。 |
+| `link:` 指向仓库 | **仅本机开发**：改动即时生效；代价是未提交改动直接进生产运行态。 |
 
-## 下一轮可执行项
+## 五、工作区与安全边界
 
-1. **生产 GUI 视觉回归** — 重启 Host 后打开 设置 → 能力菜单 / 调用统计，重点验 `Modal` 的焦点陷阱与 Esc 关闭、`SegmentedTabs` 键盘导航、`LocationModal` 滚动。成本 5 分钟。这是本轮唯一未闭环的验收项，建议先做。
-2. **发布 v0.1.10** — `npm version 0.1.10` → `pnpm typecheck/test/build` → `npm pack` → 传 Release 附件 → 建 tag 与 Release。成本 15 分钟。依赖第 1 项通过。
-3. **改回安装来源** — 发布后把 profile 依赖从 `link:` 换回 Release 附件 URL，避免未提交改动进入生产运行态。成本 3 分钟。依赖第 2 项。
-4. **清理临时残留** — `%TEMP%\css-prune-backup`（3 个源文件备份）与 `%TEMP%\tgz-trash-latest`（0.1.7/0.1.8 tarball）。成本 1 分钟，属破坏性操作，删除前确认无需回滚。
-5. **评估 `mc-dot` 自建组件** — 若希望三态字形与官方观感统一，可写一个保留形状区分的本地组件。成本 1–2 小时，非必需。
-
-## 工作区与安全边界
-
-- 默认不触碰 `~/.dsh/profiles/desktop`；本轮该 profile 的依赖来源已变更（见第 2 条），属已授权改动。
-- 可直接修改源码、测试、文档、patch、package 元数据、CI；外部发布与生产 profile 变更须按当轮授权执行。
+- 默认不触碰 `~/.dsh/profiles/desktop`；本轮未改 profile。
 - 不提交 `node_modules/`、`lib/`、临时 `.tgz`、测试缓存、本机 profile、Session、凭据或原始日志。
+- 推送前先 `git ls-remote origin refs/heads/main` 比对远端 SHA——**超时不等于失败**，本轮上次会话已实测过。优先用 `git -c http.proxy=http://127.0.0.1:7890 push`。

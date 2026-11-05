@@ -2,7 +2,6 @@ import { tmpdir } from 'node:os'
 import { join as pathJoin } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
@@ -11,6 +10,7 @@ import { createScope } from '@deepseek-ai/dsh-scope'
 import * as registry from '../src/registry.ts'
 import * as policy from '../src/policy.ts'
 import { readMenuState, readTierState } from '../src/policy-state.ts'
+import { mountTestExecutor, runOneToolCall } from './stubs/test-executor.ts'
 
 const testSignal = new AbortController().signal
 
@@ -34,6 +34,7 @@ async function setup(home: string, config: registry.Config = {}): Promise<Contex
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  mountTestExecutor(ctx)
   await ctx.plugin(SkillRegistry)
   await ctx.plugin(SkillFileSystem, {
     dshHome: `${home}/.dsh`,
@@ -221,13 +222,13 @@ describe('meta-registry', () => {
     await ctx.capability.refresh()
     const before = ctx.capability.get(issue)?.stats.uses ?? 0
 
-    const exec = {
-      callId: ToolCallId('call-1'),
+    // 0.2.2's single-call entry point is gone; a batch of one is the contract.
+    const result = await runOneToolCall(ctx, {
+      callId: 'call-1',
       name: issue,
       arguments: { title: 'x' },
       signal: testSignal,
-    }
-    const result = await ctx.tools.execute(exec)
+    })
     expect(result.isError).toBe(false)
     const after = ctx.capability.get(issue)?.stats.uses ?? 0
     expect(after).toBe(before + 1)
@@ -673,6 +674,7 @@ describe('meta-registry', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(SkillFileSystem, {
       dshHome: `${home}/.dsh`,

@@ -4,7 +4,8 @@
  * Same constraint as `client-usage.spec.tsx`: this package has no DOM harness,
  * so the component is inspected as an element tree rather than mounted. What
  * matters here is the shell's contract — one page, one tab bar keyed to
- * categories, and both views present so neither loses its subscriptions.
+ * categories in the product-specified order, and every view present so none
+ * loses its subscriptions.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { isValidElement } from 'react'
@@ -18,8 +19,15 @@ vi.mock('../src/client/CapabilitySection.tsx', () => ({
   CapabilitySection: function CapabilitySection() { return null },
 }))
 
-import { PluginSectionView, type PluginSectionProps } from '../src/client/PluginSection.tsx'
+import {
+  PluginSectionView,
+  type PluginCategory,
+  type PluginSectionProps,
+} from '../src/client/PluginSection.tsx'
 import { UsagePanel, type UsagePanelApi } from '../src/client/usage.tsx'
+import { OverviewContainer } from '../src/client/OverviewContainer.tsx'
+import { OverviewPanel } from '../src/client/OverviewPanel.tsx'
+import { GuardPanel } from '../src/client/GuardPanel.tsx'
 import type { CapabilitySectionInjected } from '../src/client/CapabilitySection.tsx'
 
 const capability = {
@@ -35,6 +43,8 @@ const usageApi: UsagePanelApi = {
 
 const labels: Record<string, string> = {
   nav: '能力菜单',
+  tabOverview: '总览',
+  tabGuard: '思考限制',
   tabCatalog: '能力目录',
   tabUsage: '调用统计',
 }
@@ -73,7 +83,7 @@ function find(node: ReactNode, predicate: (element: TreeNode) => boolean): TreeN
   return hit
 }
 
-function render(active: 'catalog' | 'usage' = 'catalog'): ReactElement {
+function render(active: PluginCategory = 'overview'): ReactElement {
   return PluginSectionView({ ...props(), active, onSelect: () => undefined }) as ReactElement
 }
 
@@ -88,8 +98,8 @@ const tree = render()
 function tabsTreeOf(source: ReactNode): ReactNode {
   const tabs = find(source, element => String((element.type as { name?: string })?.name) === 'SegmentedTabs')
   if (tabs === undefined) return null
-  const render = tabs.type as (props: unknown) => ReactNode
-  return render(tabs.props)
+  const renderFn = tabs.type as (props: unknown) => ReactNode
+  return renderFn(tabs.props)
 }
 
 function tabButtons(source: ReactNode = tree): TreeNode[] {
@@ -100,33 +110,46 @@ function tabButtons(source: ReactNode = tree): TreeNode[] {
   return buttons
 }
 
+function panelsOf(source: ReactNode = tree): TreeNode[] {
+  const panels: TreeNode[] = []
+  walk(source, (element) => {
+    if (element.props.role === 'tabpanel') panels.push(element)
+  })
+  return panels
+}
+
 describe('combined settings page', () => {
-  it('renders one category tab bar with a tab per category', () => {
+  it('renders the four categories in the product-specified order', () => {
     const buttons = tabButtons()
-    expect(buttons.map(button => button.props.children)).toEqual(['能力目录', '调用统计'])
-    // Exactly one of them is selected on first paint.
+    expect(buttons.map(button => button.props.children))
+      .toEqual(['总览', '思考限制', '能力目录', '调用统计'])
+  })
+
+  it('selects exactly one tab on first paint, and it is 总览', () => {
+    const buttons = tabButtons()
     expect(buttons.filter(button => button.props['aria-selected'] === true)).toHaveLength(1)
     expect(buttons[0]?.props['aria-selected']).toBe(true)
   })
 
-  it('starts on the capability catalog', () => {
-    const panels = [] as TreeNode[]
-    walk(tree, (element) => {
-      if (element.props.role === 'tabpanel') panels.push(element)
-    })
-    expect(panels).toHaveLength(2)
-    // Catalog visible first; usage mounted but hidden, so it keeps its
-    // subscription instead of refetching on every tab click.
+  it('starts on 总览', () => {
+    const panels = panelsOf()
+    expect(panels).toHaveLength(4)
+    // 总览 visible first; the other three mounted but hidden, so they keep their
+    // subscriptions instead of refetching on every tab click.
     expect(panels[0]?.props.hidden).toBe(false)
-    expect(panels[1]?.props.hidden).toBe(true)
+    expect(panels.slice(1).every(panel => panel.props.hidden === true)).toBe(true)
   })
 
-  it('keeps both reused views mounted, not conditionally swapped', () => {
+  it('keeps every view mounted, not conditionally swapped', () => {
+    // 总览 is wired through its container so it reads the real usage snapshot;
+    // the pure view is covered separately by OverviewPanel's own contract.
+    expect(find(tree, element => element.type === OverviewContainer)).toBeDefined()
+    expect(find(tree, element => element.type === GuardPanel)).toBeDefined()
     expect(find(tree, element => element.type === UsagePanel)).toBeDefined()
     // The capability view is a function component; assert its element exists
     // rather than reaching into its internals.
-    const section = find(tree, element => String((element.type as { name?: string })?.name) === 'CapabilitySection')
-    expect(section).toBeDefined()
+    expect(find(tree, element => String((element.type as { name?: string })?.name) === 'CapabilitySection'))
+      .toBeDefined()
   })
 
   it('passes the usage api straight through', () => {
@@ -134,18 +157,79 @@ describe('combined settings page', () => {
     expect((panel?.props as { api?: unknown } | undefined)?.api).toBe(usageApi)
   })
 
-  it('flips which panel is visible when the category changes', () => {
-    const usageTree = render('usage')
-    const panels: TreeNode[] = []
-    walk(usageTree, (element) => {
-      if (element.props.role === 'tabpanel') panels.push(element)
-    })
-    expect(panels[0]?.props.hidden).toBe(true)
-    expect(panels[1]?.props.hidden).toBe(false)
+  it('flips the visible panel when the category changes', () => {
+    for (const [index, category] of (['overview', 'guard', 'catalog', 'usage'] as const).entries()) {
+      const panels = panelsOf(render(category))
+      const hidden = panels.map(panel => panel.props.hidden)
+      expect(hidden[index]).toBe(false)
+      expect(hidden.filter(value => value === false)).toHaveLength(1)
+    }
   })
 
   it('reports the selected category on the tabs', () => {
     const buttons = tabButtons(render('usage'))
-    expect(buttons.map(button => button.props['aria-selected'])).toEqual([false, true])
+    expect(buttons.map(button => button.props['aria-selected']))
+      .toEqual([false, false, false, true])
+  })
+})
+
+describe('思考限制 page', () => {
+  it('renders the three sections in order without a summary panel', () => {
+    const element = GuardPanel({
+      t: (key: string) => labels[key] ?? key,
+      enabled: { duplicate_call: true, alternating_cycle: true, no_progress: true },
+      duplicateThresholds: [3, 5, 8],
+    }) as ReactElement
+
+    const ids: unknown[] = []
+    walk(element, (node) => {
+      if (node.props['data-guard-section'] !== undefined) ids.push(node.props['data-guard-section'])
+    })
+    expect(ids).toEqual(['duplicate_call', 'alternating_cycle', 'no_progress'])
+
+    // No summary block: the 总览 page owns "what is on right now".
+    const text: string[] = []
+    walk(element, (node) => {
+      if (typeof node.props.children === 'string') text.push(node.props.children)
+    })
+    expect(text.some(value => value.includes('当前生效'))).toBe(false)
+  })
+
+  it('exposes the model-side id so the English reminder can be traced', () => {
+    const element = GuardPanel({
+      t: (key: string) => labels[key] ?? key,
+      enabled: { duplicate_call: true, alternating_cycle: true, no_progress: true },
+      duplicateThresholds: [3, 5, 8],
+    }) as ReactElement
+
+    const text: string[] = []
+    walk(element, (node) => {
+      if (typeof node.props.children === 'string') text.push(node.props.children)
+    })
+    for (const id of ['duplicate_call', 'alternating_cycle', 'no_progress']) {
+      expect(text.some(value => value.includes(id))).toBe(true)
+    }
+  })
+
+  it('toggles a section through the callback', () => {
+    const calls: Array<[string, boolean]> = []
+    const element = GuardPanel({
+      t: (key: string) => labels[key] ?? key,
+      enabled: { duplicate_call: true, alternating_cycle: false, no_progress: true },
+      duplicateThresholds: [3, 5, 8],
+      onToggle: (id, next) => calls.push([id, next]),
+    }) as ReactElement
+
+    const switches: TreeNode[] = []
+    walk(element, (node) => {
+      if (node.props.role === 'switch') switches.push(node)
+    })
+    expect(switches).toHaveLength(3)
+    for (const node of switches) (node.props.onClick as () => void)()
+    expect(calls).toEqual([
+      ['duplicate_call', false],
+      ['alternating_cycle', true],
+      ['no_progress', false],
+    ])
   })
 })

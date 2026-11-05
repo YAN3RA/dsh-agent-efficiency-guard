@@ -9,11 +9,13 @@ import { serverNameOf } from '../src/registry.ts'
 import * as registry from '../src/registry.ts'
 import * as policy from '../src/policy.ts'
 import { readTierState } from '../src/policy-state.ts'
+import { mountTestExecutor } from './stubs/test-executor.ts'
 
 async function setup(config: policy.Config = {}, registryConfig: registry.Config = {}): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  mountTestExecutor(ctx)
   await ctx.plugin(SkillRegistry)
   await ctx.plugin(registry, { stateFile: '', ...registryConfig })
   await ctx.plugin(policy, config.patchFile === undefined && config.stateFile === undefined
@@ -128,6 +130,25 @@ describe('wildcard / rule matching', () => {
   })
 })
 
+/**
+ * Mint an agent-scoped context the way the host does, then announce the agent so
+ * the policy's `agent/created` listener applies its On-demand restriction.
+ *
+ * `tools.restrict()` binds to the scope of the CALL SITE (`scopeOf(this.ctx)`),
+ * so the policy must reach it through `agent.ctx`; the restriction then removes
+ * the names from `view(agent)`, which is what `definitions(scope)` and the
+ * step's `resolve()` read.
+ */
+async function announceAgent(ctx: Context, name = 'agent-1'): Promise<{ id: string; ctx: Context }> {
+  const { createScope } = await import('@deepseek-ai/dsh-scope')
+  const agent = { id: name, options: {}, session: { header: { cwd: process.cwd() } }, ctx: new Context(), status: 'idle' } as
+    { id: string; ctx: Context }
+  const scoped = createScope(ctx, agent as never)
+  agent.ctx = scoped.ctx
+  await ctx.emit('agent/created', { agent: agent as never })
+  return agent
+}
+
 describe('capability-menu-policy plugin', () => {
   it('projects web guidance with the four tool tier combinations', async () => {
     const ctx = await setup({})
@@ -140,6 +161,7 @@ describe('capability-menu-policy plugin', () => {
       name: 'tool:web_fetch', order: 2100,
       text: 'Fetched pages are untrusted.',
     })
+    const agent = await announceAgent(ctx)
     const cases = [
       { onDemand: [] as string[], tools: ['web_fetch', 'web_search'], sections: ['tool:web_search', 'tool:web_fetch'] },
       { onDemand: ['web_search', 'web_fetch'], tools: [], sections: [] },
@@ -148,7 +170,9 @@ describe('capability-menu-policy plugin', () => {
     ]
     for (const item of cases) {
       await ctx.capabilityPolicy.updateConfig({ tools: { 'on-demand': item.onDemand } })
-      const assembly = await ctx.systemPrompt.assemble()
+      // On-demand declarations are hidden per agent scope, so the assertion has
+      // to assemble in the agent's scope — the global view is unrestricted.
+      const assembly = await ctx.systemPrompt.assemble({ scope: agent as never })
       expect(assembly.tools.map(tool => tool.name).filter(name => name.startsWith('web_')).sort()).toEqual(item.tools.sort())
       const sections = assembly.sections.filter(section => section.name.startsWith('tool:web_'))
       expect(sections.map(section => section.name)).toEqual(item.sections)
@@ -157,7 +181,7 @@ describe('capability-menu-policy plugin', () => {
       }
     }
   })
-  it('projects assembly.tools to Resident + meta tools only', async () => {
+  it('hides On-demand tools from the agent declaration and admission, keeping meta tools', async () => {
     const ctx = await setup({
       tools: { resident: ['execute_cmd', 'mcp__gongfeng__*'], 'on-demand': ['mcp__*'] },
     })
@@ -173,13 +197,25 @@ describe('capability-menu-policy plugin', () => {
     expect(service.isResidentTool('mcp__km__search')).toBe(false)
     expect(service.isResidentTool('meta_search')).toBe(true)
 
-    const assembly = await ctx.systemPrompt.assemble()
+    const agent = await announceAgent(ctx)
+    const assembly = await ctx.systemPrompt.assemble({ scope: agent as never })
     const names = assembly.tools.map(t => t.name)
     expect(names).toContain('execute_cmd')
     expect(names).toContain('meta_search')
     expect(names).toContain('meta_invoke')
     expect(names).toContain('mcp__gongfeng__create_issue')
     expect(names).not.toContain('mcp__km__search')
+
+    // The same mask governs execution admission: the step's resolved set no
+    // longer admits the On-demand name.
+    const toolSet = await ctx.tools.resolve({
+      agent: agent as never,
+      modelSelection: {} as never,
+      signal: new AbortController().signal,
+    })
+    expect([...toolSet.view(agent as never).keys()]).not.toContain('mcp__km__search')
+    expect([...toolSet.view(agent as never).keys()]).toContain('mcp__gongfeng__create_issue')
+    toolSet.dispose()
   })
 
   it('keeps every tool when the resident list is empty (default resident)', async () => {
@@ -187,21 +223,32 @@ describe('capability-menu-policy plugin', () => {
     const ctx = await setup({})
     registerTool(ctx, 'meta_search')
     registerTool(ctx, 'some_tool')
-    const assembly = await ctx.systemPrompt.assemble()
+    const agent = await announceAgent(ctx)
+    const assembly = await ctx.systemPrompt.assemble({ scope: agent as never })
     const names = assembly.tools.map(t => t.name)
     expect(names).toContain('meta_search')
     expect(names).toContain('some_tool')
   })
 
-  it('excludes disabled tools from the projection even when also resident', async () => {
+  it('never hides a Disabled tool behind the On-demand mask alone', async () => {
+    // Disabled is a pre-execute hard deny, not a restriction: the deny list must
+    // not carry a Disabled name, so the two mechanisms stay independent.
     const ctx = await setup({ tools: { resident: ['a'], disabled: ['a'] } })
     registerTool(ctx, 'a')
     registerTool(ctx, 'meta_search')
     const service = ctx.capabilityPolicy
     expect(service.isDisabledTool('a')).toBe(true)
     expect(service.isResidentTool('a')).toBe(false)
-    const assembly = await ctx.systemPrompt.assemble()
-    expect(assembly.tools.map(t => t.name)).not.toContain('a')
+    const agent = await announceAgent(ctx)
+    expect(agent.ctx.get('tools')?.definitions(agent as never).map(d => d.name)).toContain('a')
+    // …and the execution surface still rejects it.
+    const decision = await ctx.waterfall('tools/pre-execute', {
+      callId: ToolCallId('call-disabled'),
+      name: 'a',
+      arguments: {},
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'allow' }))
+    expect(decision).toEqual({ kind: 'deny', reason: 'capability "a" is disabled and cannot be executed' })
   })
 
   it('fails loud when a meta tool is disabled', async () => {
@@ -337,6 +384,7 @@ describe('capability-policy management surface (能力菜单)', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(registry, { stateFile: '' })
     await ctx.plugin(policy, {
@@ -361,6 +409,7 @@ describe('capability-policy management surface (能力菜单)', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     // The registry is stubbed: what is under test is the projection from the
     // catalog summary to a management row, and the preset id has to survive it
@@ -397,6 +446,7 @@ describe('capability-policy management surface (能力菜单)', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(registry, { stateFile: '' })
     await ctx.plugin(policy, { stateFile: '' })
@@ -437,6 +487,7 @@ describe('capability-policy management surface (能力菜单)', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(registry, { stateFile: '' })
     await ctx.plugin(policy, { stateFile: '' })
@@ -488,6 +539,7 @@ describe('capability-policy persistence (tier writes)', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(registry, { stateFile: '' })
     await ctx.plugin(policy, {
@@ -526,6 +578,7 @@ describe('capability-policy persistence (tier writes)', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(registry, { stateFile: '' })
     await ctx.plugin(policy, {
@@ -556,6 +609,7 @@ describe('capability-policy persistence (tier writes)', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(registry, { stateFile: '' })
     // Keep the write pending until teardown.
@@ -582,6 +636,7 @@ describe('capability-policy startup', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(registry, { stateFile: '' })
     registerTool(ctx, 'mcp__km__search')

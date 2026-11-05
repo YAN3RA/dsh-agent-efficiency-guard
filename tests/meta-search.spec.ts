@@ -2,7 +2,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
@@ -10,6 +9,7 @@ import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import * as registry from '../src/registry.ts'
 import * as policy from '../src/policy.ts'
 import * as toolMetaSearch from '../src/search.ts'
+import { mountTestExecutor, runOneToolCall } from './stubs/test-executor.ts'
 
 const testSignal = new AbortController().signal
 
@@ -27,6 +27,7 @@ async function setup(home: string, config: toolMetaSearch.Config = {}, registryC
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  mountTestExecutor(ctx)
   await ctx.plugin(SkillRegistry)
   await ctx.plugin(SkillFileSystem, {
     dshHome: `${home}/.dsh`,
@@ -87,14 +88,14 @@ async function runTool(
   args: Record<string, unknown>,
   agent: ReturnType<typeof agentStub> = agentStub('agent'),
 ): Promise<{ value: unknown; isError: boolean }> {
-  const result = await ctx.tools.execute({
-    callId: ToolCallId(`call-${name}`),
+  const result = await runOneToolCall(ctx, {
+    callId: `call-${name}`,
     name,
     arguments: args,
     agent,
     signal: testSignal,
   })
-  return { value: result.value, isError: result.isError }
+  return { value: result.isError ? undefined : result.value, isError: result.isError }
 }
 
 describe('capability-menu-search', () => {
@@ -257,6 +258,7 @@ describe('capability-menu-search', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(registry, { stateFile: '' })
     await ctx.plugin(policy, { stateFile: '', tools: { 'on-demand': ['mcp__km__search'] } })
@@ -278,6 +280,7 @@ describe('capability-menu-search', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(SkillFileSystem, {
       dshHome: `${home}/.dsh`,
@@ -304,6 +307,7 @@ describe('capability-menu-search', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(SkillFileSystem, {
       dshHome: `${home}/.dsh`,
@@ -334,6 +338,7 @@ describe('capability-menu-search', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(SkillFileSystem, {
       dshHome: `${home}/.dsh`,

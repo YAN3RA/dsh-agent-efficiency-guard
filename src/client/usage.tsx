@@ -559,10 +559,10 @@ function usageCoverageLabel(status: UsageCoverageStatus): string {
 
 function usageKindLabel(kind: UsageCapabilityKind): string {
   switch (kind) {
-    case 'mcp': return 'MCP'
-    case 'skill': return '技能'
-    case 'plugin-tool': return '插件工具'
-    case 'native': return '原生与其他'
+    case 'mcp': return 'MCP 工具'
+    case 'skill': return 'Skills'
+    case 'plugin-tool': return '第三方插件'
+    case 'native': return '原生工具'
     case 'unknown': return '未知'
   }
 }

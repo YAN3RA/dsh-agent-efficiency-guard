@@ -2,7 +2,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
@@ -11,6 +10,7 @@ import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import * as registry from '../src/registry.ts'
 import * as policy from '../src/policy.ts'
 import * as toolMetaInvoke from '../src/invoke.ts'
+import { mountTestExecutor, runOneToolCall } from './stubs/test-executor.ts'
 
 const testSignal = new AbortController().signal
 
@@ -24,16 +24,22 @@ function agentStub(name: string) {
   } as never
 }
 
-async function setup(home: string, config: toolMetaInvoke.Config = {}, registryConfig: registry.Config = {}): Promise<Context> {
-  const ctx = new Context()
+/** Mount the same composition every test needs, executor included. */
+async function mountCore(ctx: Context, home: string): Promise<void> {
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  mountTestExecutor(ctx)
   await ctx.plugin(SkillRegistry)
   await ctx.plugin(SkillFileSystem, {
     dshHome: `${home}/.dsh`,
     agentsHome: `${home}/.agents`,
     watch: false,
   })
+}
+
+async function setup(home: string, config: toolMetaInvoke.Config = {}, registryConfig: registry.Config = {}): Promise<Context> {
+  const ctx = new Context()
+  await mountCore(ctx, home)
   await ctx.plugin(registry, { stateFile: '', ...registryConfig })
   await ctx.plugin(toolMetaInvoke, config)
   return ctx
@@ -129,14 +135,14 @@ async function runTool(
   args: Record<string, unknown>,
   agent: unknown = agentStub('agent'),
 ): Promise<{ value: unknown; isError: boolean }> {
-  const result = await ctx.tools.execute({
-    callId: ToolCallId(`call-${name}`),
+  const result = await runOneToolCall(ctx, {
+    callId: `call-${name}`,
     name,
     arguments: args,
-    agent: agent as never,
+    agent,
     signal: testSignal,
   })
-  return { value: result.value, isError: result.isError }
+  return { value: result.isError ? undefined : result.value, isError: result.isError }
 }
 
 describe('capability-menu-invoke', () => {
@@ -158,15 +164,15 @@ describe('capability-menu-invoke', () => {
       },
     }))
     await ctx.capability.refresh()
-    const result = await ctx.tools.execute({
-      callId: ToolCallId('ppt-session-repro'),
+    const result = await runOneToolCall(ctx, {
+      callId: 'ppt-session-repro',
       name: 'meta_invoke',
       arguments: { id: 'ppt_list_templates', kind: 'tool', args: { workflow: 'wf-1' } },
-      agent: agentStub('ppt-session') as never,
+      agent: agentStub('ppt-session'),
       signal: testSignal,
     })
     expect(result.isError, JSON.stringify(result.content)).toBe(false)
-    expect(result.value).toMatchObject({ ok: true, kind: 'mcp' })
+    expect(result.isError ? undefined : result.value).toMatchObject({ ok: true, kind: 'mcp' })
   })
 
   it('does not bypass a caller scope restriction by known id', async () => {
@@ -259,11 +265,11 @@ describe('capability-menu-invoke', () => {
     await ctx.capability.refresh()
 
     const envelope = { id: issue, kind: 'tool', args: { title: 'x' } }
-    const result = await ctx.tools.execute({
-      callId: ToolCallId('call-envelope'),
+    const result = await runOneToolCall(ctx, {
+      callId: 'call-envelope',
       name: 'meta_invoke',
       arguments: { id: issue, kind: 'tool', args: envelope },
-      agent: agentStub('agent') as never,
+      agent: agentStub('agent'),
       signal: testSignal,
     })
     expect(result.isError).toBe(true)
@@ -406,11 +412,12 @@ describe('capability-menu-invoke', () => {
     expect(received).toEqual({ command: 'echo hi' })
   })
 
-  it('executes an On-demand native tool while it stays out of the exposure surface', async () => {
+  it('hides an On-demand tool from the agent declaration yet still forwards it', async () => {
     const home = await import('node:fs/promises').then(fs => fs.mkdtemp(join(tmpdir(), 'dsh-meta-invoke-')))
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(SkillFileSystem, {
       dshHome: `${home}/.dsh`,
@@ -423,12 +430,28 @@ describe('capability-menu-invoke', () => {
     const grep = registerNativeTool(ctx, 'grep', 'Search file contents with regular expressions', args => ({ ok: true, received: args }))
     await ctx.capability.refresh()
 
-    // On-demand natives are projected out of the model-facing tool list…
-    const assembly = await ctx.systemPrompt.assemble()
-    expect(assembly.tools.map(tool => tool.name)).not.toContain(grep)
+    expect(ctx.capabilityPolicy.classifyCapability(grep)).toBe('on-demand')
 
-    // …but stay reachable through meta_invoke.
-    const { value, isError } = await runTool(ctx, 'meta_invoke', { id: grep, kind: 'tool', args: { command: 'ls' } })
+    // The policy applies an agent-scoped `tools.restrict({ deny })` at
+    // `agent/created`, so the name leaves `view(agent)` and therefore the
+    // model-facing declarations for that agent…
+    const { createScope } = await import('@deepseek-ai/dsh-scope')
+    const agent = agentStub('on-demand-agent') as { id: string; ctx: Context }
+    agent.ctx = createScope(ctx, agent as never).ctx
+    await ctx.emit('agent/created', { agent: agent as never })
+    const assembly = await ctx.systemPrompt.assemble({ scope: agent as never })
+    expect(assembly.tools.map(tool => tool.name)).not.toContain(grep)
+    expect(agent.ctx.get('tools')?.get(grep, agent as never)).toBeUndefined()
+    // …while the global view (other agents, management UI) keeps it.
+    expect(ctx.tools.definitions().map(d => d.name)).toContain(grep)
+    // The catalog pointer tells the model how to reach it.
+    expect(assembly.sections.find(section => section.name === 'capability-menu-catalog')?.text)
+      .toContain('meta_invoke({id, kind, args})')
+
+    // …and meta_invoke still reaches it: the forward resolves On-demand targets
+    // through the global view, because the policy itself masked them out of the
+    // caller's view.
+    const { value, isError } = await runTool(ctx, 'meta_invoke', { id: grep, kind: 'tool', args: { command: 'ls' } }, agent)
     expect(isError).toBe(false)
     const result = value as { ok: boolean; kind: string; detail: { forwarded: boolean; target: string } }
     expect(result.ok).toBe(true)
@@ -447,6 +470,7 @@ describe('capability-menu-invoke', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(SkillFileSystem, {
       dshHome: `${home}/.dsh`,
@@ -469,6 +493,7 @@ describe('capability-menu-invoke', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(SkillFileSystem, {
       dshHome: `${home}/.dsh`,
