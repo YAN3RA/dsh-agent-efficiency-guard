@@ -499,7 +499,7 @@ const USAGE_BACKFILL_LABELS: Readonly<Record<string, string>> = Object.freeze({
   cancelled: '被取消',
   'backfill-incomplete': '会话未能完整读取',
   'backfill-disabled-profile-unknown': '无法识别 profile',
-  'backfill-disabled-service-unavailable': '宿主未提供 sessionPersistence 服务',
+  'backfill-disabled-service-unavailable': '宿主未提供 sessionPersistence 服务（本机回补不可用，数字仅为实时观测）',
   'backfill-runtime-failed': '回补运行时出错',
 })
 
