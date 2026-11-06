@@ -46,3 +46,6 @@ logs/
 
 # Project-layer docs placed under the source dir by the workspace layout
 05_变更与风险/
+
+# Internal project docs: kept locally only, not published with the repo
+/docs/

@@ -164,7 +164,7 @@ function Select-Asset($Release) {
     $hashed = $assets | Where-Object { $_.name -match '-[0-9a-f]{8}\.tgz$' } | Select-Object -First 1
     if ($null -ne $hashed) { return $hashed }
     $fallback = $assets | Select-Object -First 1
-    Write-Warn2 "this release has no content-hashed asset; upgrading may hit the pnpm URL cache (see docs/install.md)"
+    Write-Warn2 "this release has no content-hashed asset; upgrading may hit the pnpm URL cache (see the README section on hashed asset names)"
     return $fallback
 }
 

@@ -31,7 +31,7 @@
 **刻意没有改的两处，改动前务必读这段：**
 
 1. **状态文件名 `capability-menu-policy.json`** —— 里面是用户的能力分层（**196 项工具 + 16 个技能**）。改文件名 = 插件从空状态启动 = 静默清空用户配置。**我在改名时一度误改，已回退。**
-2. **`docs/release-0.1.7` / `release-0.1.8` 的历史发布说明** —— 记录当时以旧名发布的事实，改写等于伪造记录。
+2. **`docs/release-0.1.7` / `release-0.1.8` 的历史发布说明** —— 记录当时以旧名发布的事实，改写等于伪造记录。（该目录现为本地保留，不随仓库发布，见第六节。）
 
 **已知副作用：** `usage-profile` 的分区哈希域含包名，两个固定测试值随之变化。当前是 `memory` 模式、不落盘分区，无实际数据损失；测试注释已写明此前提。
 
@@ -43,12 +43,14 @@
 
 **诚实边界不变：** 读不到的会话仍标 `unknown`，不伪装成 `complete`。这是硬红线。
 
-### 3. 新增文档
+### 3. 新增文档（本地保留，不随仓库发布）
 
 - **`docs/ARCHITECTURE.md`** —— 功能模块与技术方案，**待你审批**。10 个模块，每个写明职责/方案/取舍/限制。
 - **`docs/README.md`** —— 文档索引，按用途分组。
 - **`docs/investigations/git-install.md`** —— 各安装来源实测结论。
 - **`docs/specs/`** —— 归档的两份需求书。
+
+> 仓库发布范围：源码 + 测试 + 根目录 `README.md` / `AGENTS.md` / `HANDOFF.md`。`docs/` 全部 26 个文件已 `git rm --cached` 并加入 `.gitignore`，只在本地保留。
 
 ---
 
@@ -111,7 +113,7 @@ dsh plugin --profile desktop add https://github.com/YAN3RA/dsh-thinking-guard/re
 ## 六、未完成 / 未验证
 
 1. **覆盖状态是否真的变 complete** —— 代码已生效，但未在 GUI 确认结果。
-2. **`docs/ARCHITECTURE.md` 未审批** —— 需要你逐模块复核。
+2. **本地 `docs/ARCHITECTURE.md` 未审批** —— 需要你逐模块复核。
 3. **macOS / Linux 未验证** —— 安装脚本 `#Requires -Version 7.0`，只做 Windows。
 4. **196 项工具全按需** —— 这是你手动设置的，尊重现状未改。恢复工具见下。
 5. `meta_invoke` 单次转发不经过 executor 调度器（并发分类、`maxParallelToolCalls`），与批量 `execute` 语义不完全等价。
@@ -123,7 +125,7 @@ dsh plugin --profile desktop add https://github.com/YAN3RA/dsh-thinking-guard/re
 ## 七、下一轮可执行项
 
 1. **确认覆盖状态** —— 设置 → 插件 → 调用统计，看是否从「未知」变为「完整/部分」。成本 1 分钟。**推荐先做**，这是 v0.1.15 的唯一验收点。
-2. **审批 `docs/ARCHITECTURE.md`** —— 逐模块复核方案。重点看第 3 节（On-demand 实现）与第 9 节（安装为何必须用 `dsh plugin add`）。成本 15 分钟。
+2. **审批本地 `docs/ARCHITECTURE.md`** —— 逐模块复核方案。重点看第 3 节（On-demand 实现）与第 9 节（安装为何必须用 `dsh plugin add`）。成本 15 分钟。
 3. **确认改名后 UI 正常** —— 设置 → 插件 应显示 `dsh-thinking-guard`，四页签可切换。成本 2 分钟。
 4. **决定 196 项工具是否恢复常驻** —— 先跑 `node scripts/restore-resident-tiers.mjs`（默认只报告，不改）。当前 patch 声明 7 项常驻，其中 6 项被状态文件覆盖成按需。成本 5 分钟。
 5. **清理备份** —— `%TEMP%\guard-pre-rename-backup`（改名前的完整副本，1.4G）。确认无误后可删。成本 1 分钟。

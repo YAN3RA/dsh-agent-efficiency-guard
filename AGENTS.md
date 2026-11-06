@@ -11,7 +11,7 @@
 - 检查：`pnpm typecheck`、`pnpm test`
 - 构建：`pnpm build`
 - 发布包检查：`npm pack --dry-run`
-- 当前 DSH peer / 实际宿主版本及验证边界以 `HANDOFF.md` 和 `docs/acceptance-report.md` 为准。
+- 当前 DSH peer / 实际宿主版本及验证边界以 `HANDOFF.md` 为准。
 
 ## 架构与目录
 
@@ -19,7 +19,8 @@
 - `tests/`：Vitest。每个新行为补对应测试；Windows 路径使用 `node:os` 的 `tmpdir()` 和 `node:path`。
 - `lib/`：由 `pnpm build` 生成，禁止手工编辑。
 - `cordis.patch.yml`：插件 bundle patch；不复制真实用户 profile 配置。
-- `docs/`：运行时审计、宿主集成、验收结果、诊断与发布材料；`HANDOFF.md` 只记录当前进度。
+- 仓库只发布源码、测试与根目录的 `README.md` / `AGENTS.md` / `HANDOFF.md`；其余文档一律本地保留，不提交。
+- `docs/`：运行时审计、宿主集成、验收结果、诊断与发布材料。**该目录只在本地保留，已从版本跟踪移除（`.gitignore` 忽略），不随仓库发布。** `HANDOFF.md` 只记录当前进度。
 
 ## 开发规矩
 
@@ -51,8 +52,8 @@ npm pack --dry-run
 
 ## 已知边界与修改授权
 
-- 历史 0.1.7 N8（上游结果保留验证，区别于当前 N8 调用统计核心）：默认宿主 spill policy 可能让 Save Token 展开上游预览；完整原文定位与限制见 `docs/host-pi-desktop-integration.md` 的 Verified upstream result retention 与 `docs/release-0.1.7/n8-diagnosis.md`。
-- N11：真实 Electron `rebuilt` 热重载帧未覆盖；已知限制见 `docs/release-0.1.7/n11-diagnosis.md`。
+- 历史 0.1.7 N8（上游结果保留验证，区别于当前 N8 调用统计核心）：默认宿主 spill policy 可能让 Save Token 展开上游预览；完整原文定位与限制见本地 `docs/host-pi-desktop-integration.md` 的 Verified upstream result retention 与本地 `docs/release-0.1.7/n8-diagnosis.md`。
+- N11：真实 Electron `rebuilt` 热重载帧未覆盖；已知限制见本地 `docs/release-0.1.7/n11-diagnosis.md`。
 - 隔离 N9 Agent Session 授权链通过 13/13 断言，不代表完整生产兼容性验收通过。
 - 默认不触碰 `C:\Users\yansui\.dsh\profiles\desktop`。生产安装、切换旧 Capability Menu、批量删除/移动用户配置属于单独操作，先说明影响并取得明确授权。
 - 可直接修改源码、测试、文档、patch、package 元数据和 CI；任何外部发布、生产 profile 变更都须按本轮授权执行。
