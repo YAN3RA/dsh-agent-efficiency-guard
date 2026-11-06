@@ -33,11 +33,21 @@ export interface GuardPanelProps {
   readonly onReset?: () => void
 }
 
-/** Section id → localized title key, in the order the product specified. */
-const SECTIONS: readonly { id: GuardSectionId; titleKey: PluginSectionKey; descKey: PluginSectionKey }[] = [
-  { id: 'duplicate_call', titleKey: 'guardSectionA', descKey: 'guardDesc' },
-  { id: 'alternating_cycle', titleKey: 'guardSectionB', descKey: 'guardDesc' },
-  { id: 'no_progress', titleKey: 'guardSectionC', descKey: 'guardDesc' },
+/**
+ * Section id → localized title plus the lines that explain what the switch does.
+ *
+ * The descriptions are part of the contract, not decoration: a bare switch does
+ * not tell a reader whether turning it off stops reminders only or also stops
+ * local denials. Each bullet states the real behaviour the detector implements.
+ */
+const SECTIONS: readonly {
+  id: GuardSectionId
+  titleKey: PluginSectionKey
+  bodyKeys: readonly PluginSectionKey[]
+}[] = [
+  { id: 'duplicate_call', titleKey: 'guardSectionA', bodyKeys: ['guardABody1', 'guardABody2', 'guardABody3'] },
+  { id: 'alternating_cycle', titleKey: 'guardSectionB', bodyKeys: ['guardBBody1', 'guardBBody2', 'guardBBody3'] },
+  { id: 'no_progress', titleKey: 'guardSectionC', bodyKeys: ['guardCBody1', 'guardCBody2', 'guardCBody3'] },
 ]
 
 export function GuardPanel(props: GuardPanelProps): ReactElement {
@@ -63,10 +73,15 @@ export function GuardPanel(props: GuardPanelProps): ReactElement {
           onClick: () => canToggle && onToggle(entry.id, !isOn),
         }),
       ),
-      entry.id === 'duplicate_call' && duplicateThresholds !== undefined &&
-        createElement('div', { className: 'mc-guard-body' },
-          createElement('span', { className: 'mc-source' },
-            `${t('guardThresholds')}：${duplicateThresholds.join(' / ')}`)),
+      createElement('div', { className: 'mc-guard-body' },
+        createElement('ul', { className: 'mc-guard-points' },
+          ...entry.bodyKeys.map(key => createElement('li', { key, className: 'mc-guard-point' }, t(key)))),
+        // The fixed thresholds belong to section A only; they are numbers the
+        // implementation owns, so they are read from the prop rather than copy.
+        entry.id === 'duplicate_call' && duplicateThresholds !== undefined &&
+          createElement('div', { className: 'mc-guard-thresholds' },
+            `${t('guardThresholds')}：${duplicateThresholds.join(' / ')}`),
+      ),
     )
   }
 

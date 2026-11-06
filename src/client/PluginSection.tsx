@@ -81,6 +81,15 @@ export type PluginSectionKey =
   | 'guardSectionB'
   | 'guardSectionC'
   | 'guardModelLabel'
+  | 'guardABody1'
+  | 'guardABody2'
+  | 'guardABody3'
+  | 'guardBBody1'
+  | 'guardBBody2'
+  | 'guardBBody3'
+  | 'guardCBody1'
+  | 'guardCBody2'
+  | 'guardCBody3'
 
 /** Tab id → rendered view. Kept as data so the bar cannot drift from the panels. */
 const CATEGORIES: readonly [SegmentedTab<PluginCategory>, ...SegmentedTab<PluginCategory>[]] = [

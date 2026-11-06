@@ -11,11 +11,24 @@
  * - A failed write restores the previous value and shows the reason, so the
  *   switch never claims a state the Host did not accept.
  * - Only one write is in flight at a time; the panel disables itself meanwhile.
+ * - A successful write is no longer silent: the switch moving optimistically is
+ *   not proof the Host accepted it, so a short `Toast` confirms the save.
  */
 import { createElement, useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
+import { Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { GuardPanel, type GuardSectionId } from './GuardPanel.tsx'
 import type { PluginSectionKey } from './PluginSection.tsx'
 import type { GuardSwitches } from './remote.ts'
+
+/**
+ * Keys this container resolves.
+ *
+ * `guardToastSaved` is registered in `index.ts` under the namespace the shell
+ * binds (`settings.capability`), but it is not part of the tab/panel copy union
+ * that `PluginSectionKey` enumerates — and that union is owned by the shell — so
+ * it is widened here instead of there.
+ */
+export type GuardContainerKey = PluginSectionKey | 'guardToastSaved'
 
 /** The remote face this container reads; a subset of `CapabilityPolicyRemote`. */
 export interface GuardSwitchRemote {
@@ -48,15 +61,34 @@ interface State {
   readonly busy: boolean
 }
 
+/** A confirmation on screen; `seq` restarts the hold when the same text repeats. */
+interface ToastState {
+  readonly text: string
+  readonly seq: number
+}
+
 export function GuardContainer(props: GuardContainerProps): ReactElement {
   const { t, remote, duplicateThresholds } = props
   const [state, setState] = useState<State>({ busy: false })
+  const [toast, setToast] = useState<ToastState | null>(null)
+  const toastSeq = useRef(0)
   const alive = useRef(true)
 
   useEffect(() => {
     alive.current = true
     return () => { alive.current = false }
   }, [])
+
+  /**
+   * Confirm an accepted write. The switch already moved optimistically, so this
+   * only reports the Host's answer; a rejection keeps using the error line, which
+   * stays on screen because it names what broke.
+   */
+  const showSaved = useCallback((): void => {
+    const translate = t as (key: GuardContainerKey) => string
+    toastSeq.current += 1
+    setToast({ text: translate('guardToastSaved'), seq: toastSeq.current })
+  }, [t])
 
   const load = useCallback(async (): Promise<void> => {
     if (remote.getGuard === undefined) {
@@ -83,9 +115,11 @@ export function GuardContainer(props: GuardContainerProps): ReactElement {
     }
     const result = await remote.updateGuard({ [field]: next })
     if (!alive.current) return
-    if (result.ok) setState({ switches: { ...previous, [field]: next }, busy: false })
-    else setState({ switches: previous, busy: false, error: result.error.message })
-  }, [remote, state.switches])
+    if (result.ok) {
+      setState({ switches: { ...previous, [field]: next }, busy: false })
+      showSaved()
+    } else setState({ switches: previous, busy: false, error: result.error.message })
+  }, [remote, state.switches, showSaved])
 
   const reset = useCallback(async (): Promise<void> => {
     const previous = state.switches
@@ -99,12 +133,23 @@ export function GuardContainer(props: GuardContainerProps): ReactElement {
     setState({ switches: defaults, busy: true })
     const result = await remote.updateGuard(defaults)
     if (!alive.current) return
-    if (result.ok) setState({ switches: defaults, busy: false })
-    else setState({ switches: previous, busy: false, error: result.error.message })
-  }, [remote, state.switches])
+    if (result.ok) {
+      setState({ switches: defaults, busy: false })
+      showSaved()
+    } else setState({ switches: previous, busy: false, error: result.error.message })
+  }, [remote, state.switches, showSaved])
 
   const switches = state.switches
   return createElement('div', { className: 'mc-guard-container' },
+    // Keyed by sequence: re-saving the same switch would otherwise reuse the
+    // mounted toast and never restart its hold.
+    toast !== null && createElement(Toast, {
+      key: toast.seq,
+      text: toast.text,
+      tone: 'success',
+      holdMs: 4000,
+      onDone: () => setToast(current => (current !== null && current.seq === toast.seq ? null : current)),
+    }),
     state.error !== undefined && createElement('p', { className: 'mc-error-hint' }, state.error),
     createElement(GuardPanel, {
       t,

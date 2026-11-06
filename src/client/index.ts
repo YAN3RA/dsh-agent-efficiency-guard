@@ -34,6 +34,16 @@ const NS = 'settings.capability'
 /** Dictionary namespace for the 调用统计 section. */
 const USAGE_NS = 'settings.usage'
 
+/**
+ * Copy keys added to `settings.capability` beyond the capability catalog's set.
+ *
+ * `CapabilityKey` (CapabilitySection.tsx) and `PluginSectionKey`
+ * (PluginSection.tsx) are owned elsewhere and are not widened by this change; a
+ * key that is neither tab copy nor catalog copy is declared here so both
+ * dictionaries stay exhaustive without editing those unions.
+ */
+export type GuardToastKey = 'guardToastSaved'
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** 能力菜单 tab copy. */
@@ -110,6 +120,15 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     guardSectionB: 'B · 交替循环识别',
     guardSectionC: 'C · 无进展保护',
     guardModelLabel: '模型侧标识',
+    guardABody1: '检查相同工具 + 相同参数的重复调用。',
+    guardABody2: '提醒阈值固定为 3 / 5 / 8 次，当前不支持逐级自定义。',
+    guardABody3: '达到阈值只提醒，并以结果/错误指纹为证据判断是否真的重复。',
+    guardBBody1: '识别 A → B → A → B 这样的交替调用序列。',
+    guardBBody2: '只用工具调用序列与可获得的「结果 / 错误指纹」判断是否连续多轮没有新结果，不会为了判断循环额外请求一次模型。',
+    guardBBody3: '命中后给出可理解的说明，例如「两个操作反复交替，连续多轮没有产生新结果」。',
+    guardCBody1: '只有证据足够明确时，才阻止已证实重复的「具体操作」。',
+    guardCBody2: '每个 Turn 只局部拒绝一次匹配调用，不结束整个任务，Agent 仍可收尾或换方法。',
+    guardCBody3: '日志缺失、结果无法比较、识别不确定时降级为提醒，不拦截。',
     feedback: '反馈 ↗',
     updateAvailable: 'npm 最新版本 v{version}',
     newVersion: '有新版本',
@@ -254,7 +273,11 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     diagnosticUndocumented: '描述待补：{name}；摘要回退为「{summary}」',
     projectRootLabel: '项目根：{path}',
     skillBrowseUnavailable: '该技能没有可浏览的目录根，可能是非目录型技能来源。',
-  } satisfies Record<CapabilityKey, string>
+    // 思考限制的写入确认（GuardContainer 的 Toast）。`CapabilityKey` 由
+    // CapabilitySection 拥有，这里只加字典项，因此把 `satisfies` 放宽到
+    // `CapabilityKey | 'guardToastSaved'`，不改那份 union。
+    guardToastSaved: '已保存',
+  } satisfies Record<CapabilityKey | GuardToastKey, string>
   const en = {
     nav: 'Capability Menu',
     title: 'Capability Menu',
@@ -286,6 +309,15 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     guardSectionB: 'B · Alternating cycle detection',
     guardSectionC: 'C · No-progress protection',
     guardModelLabel: 'Model-side id',
+    guardABody1: 'Checks calls that repeat the same tool with the same arguments.',
+    guardABody2: 'Reminder thresholds are fixed at 3 / 5 / 8; per-level editing is not supported.',
+    guardABody3: 'Reaching a threshold only reminds, and repetition is confirmed by result/error fingerprints.',
+    guardBBody1: 'Detects alternating sequences such as A -> B -> A -> B.',
+    guardBBody2: 'Judges no-new-result purely from the call sequence and available result/error fingerprints; it never spends an extra model request to decide whether a loop exists.',
+    guardBBody3: 'When it fires it explains the pattern, for example "two operations keep alternating without producing a new result".',
+    guardCBody1: 'Blocks a specific operation only when the evidence is unambiguous.',
+    guardCBody2: 'Denies at most one matching call per turn and never ends the task; the agent can still wrap up or change approach.',
+    guardCBody3: 'Missing logs, incomparable results, or an uncertain match degrade to a reminder instead of a block.',
     feedback: 'Feedback ↗',
     updateAvailable: 'Latest on npm: v{version}',
     newVersion: 'New version',
@@ -430,7 +462,8 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     diagnosticUndocumented: 'Description needed: {name}; search summary falls back to “{summary}”.',
     projectRootLabel: 'Project root: {path}',
     skillBrowseUnavailable: 'This Skill has no browsable directory root; its provider may be non-filesystem based.',
-  } satisfies Record<CapabilityKey, string>
+    guardToastSaved: 'Saved',
+  } satisfies Record<CapabilityKey | GuardToastKey, string>
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'capability-menu: dictionaries')
 

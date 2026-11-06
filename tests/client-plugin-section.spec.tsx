@@ -223,6 +223,46 @@ describe('思考限制 page', () => {
     }
   })
 
+  it('explains what each switch does instead of showing a bare toggle', () => {
+    // A switch alone does not tell a reader whether turning it off stops
+    // reminders only or also stops local denials, so each section carries the
+    // bullets that state the real behaviour.
+    const element = GuardPanel({
+      t: (key: string) => key,
+      enabled: { duplicate_call: true, alternating_cycle: true, no_progress: true },
+      duplicateThresholds: [3, 5, 8],
+    }) as ReactElement
+
+    const bullets: string[] = []
+    walk(element, (node) => {
+      if (node.props.className === 'mc-guard-point') {
+        const child = node.props.children
+        if (typeof child === 'string') bullets.push(child)
+      }
+    })
+    // Three sections x three bullets.
+    expect(bullets).toHaveLength(9)
+    expect(bullets).toEqual(expect.arrayContaining([
+      'guardABody1', 'guardABody2', 'guardABody3',
+      'guardBBody1', 'guardBBody2', 'guardBBody3',
+      'guardCBody1', 'guardCBody2', 'guardCBody3',
+    ]))
+  })
+
+  it('still renders the fixed thresholds for section A only', () => {
+    const element = GuardPanel({
+      t: (key: string) => key,
+      enabled: { duplicate_call: true, alternating_cycle: true, no_progress: true },
+      duplicateThresholds: [3, 5, 8],
+    }) as ReactElement
+    const text: string[] = []
+    walk(element, (node) => {
+      if (typeof node.props.children === 'string') text.push(node.props.children)
+    })
+    const thresholdLines = text.filter(value => value.includes('3 / 5 / 8'))
+    expect(thresholdLines).toHaveLength(1)
+  })
+
   it('toggles a section through the callback', () => {
     const calls: Array<[string, boolean]> = []
     const element = GuardPanel({

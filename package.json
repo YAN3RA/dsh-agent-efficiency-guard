@@ -1,6 +1,6 @@
 {
   "name": "dsh-agent-efficiency-guard",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "DSH 能力目录与按需调用策略、Agent/Turn 执行计数及精确重复调用提醒；不执行预算硬停止或循环阻止。",
   "license": "Apache-2.0",
   "repository": {

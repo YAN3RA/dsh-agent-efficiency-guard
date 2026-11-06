@@ -249,6 +249,15 @@ export type CapabilityKey =
   | 'guardSectionB'
   | 'guardSectionC'
   | 'guardModelLabel'
+  | 'guardABody1'
+  | 'guardABody2'
+  | 'guardABody3'
+  | 'guardBBody1'
+  | 'guardBBody2'
+  | 'guardBBody3'
+  | 'guardCBody1'
+  | 'guardCBody2'
+  | 'guardCBody3'
 
 type ViewState =
   | { status: 'loading' }
@@ -470,7 +479,11 @@ body[data-ds-dark-theme] .mc-count--disabled{color:#b8abad}
 .mc-guard-title{font-size:13px;font-weight:600}
 .mc-guard-model{font-family:var(--dsw-font-code);font-size:11px;line-height:18px;
   color:var(--dsw-alias-label-tertiary);margin-left:auto}
-.mc-guard-body{padding:8px 12px;border-top:1px solid var(--dsw-alias-border-l1)}
+.mc-guard-body{padding:10px 12px;border-top:1px solid var(--dsw-alias-border-l1);display:flex;flex-direction:column;gap:8px}
+.mc-guard-points{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
+.mc-guard-point{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.mc-guard-thresholds{font-size:11.5px;line-height:18px;color:var(--dsw-alias-label-tertiary);
+  font-family:var(--dsw-font-code)}
 .mc-guard-switch{position:relative;flex:none;width:34px;height:20px;border-radius:999px;border:none;
   padding:0;cursor:pointer;background:var(--dsw-alias-state-idle-primary);transition:background .16s ease}
 .mc-guard-switch::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;
