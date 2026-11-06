@@ -501,6 +501,7 @@ export function mapUsageSnapshot(
     && (query.kind === undefined || row.capabilityKind === query.kind)
   ))
   const groups = groupCapabilities(selected)
+  const backfillReasons = readCountMap(snapshot.stats?.backfillReasons)
   return {
     // The wire snapshot carries no assembly timestamp; this is when the browser
     // mapped it, which is the honest reading of the panel's “更新于”.
@@ -523,7 +524,21 @@ export function mapUsageSnapshot(
       droppedRows,
       query,
     ),
+    // Older Hosts do not project this field at all; pass `undefined` through so
+    // the panel hides the line instead of claiming "no reasons".
+    ...(backfillReasons === undefined ? {} : { backfillReasons }),
   }
+}
+
+/** Read a bounded reason->count map, dropping anything that is not a safe count. */
+function readCountMap(value: unknown): Readonly<Record<string, number>> | undefined {
+  if (!isRecord(value)) return undefined
+  const out: Record<string, number> = {}
+  for (const [key, raw] of Object.entries(value)) {
+    if (key === '' || !isFiniteNumber(raw) || raw < 0 || !Number.isSafeInteger(raw)) continue
+    out[key] = raw
+  }
+  return Object.keys(out).length === 0 ? undefined : out
 }
 
 /** Validate the untyped wire value; `undefined` means "do not trust it". */

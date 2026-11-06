@@ -114,6 +114,12 @@ export interface UsagePanelSnapshot {
   readonly filters?: UsageFilterOptions
   /** Short caveats such as "Skill 只统计显式加载入口". */
   readonly notes?: readonly string[]
+  /**
+   * Why the history backfill stopped short, keyed by reason code. Absent means
+   * the Host did not report any (older Host, or the backfill has not run yet).
+   * This is what tells "the window was too small" apart from "it never ran".
+   */
+  readonly backfillReasons?: Readonly<Record<string, number>>
 }
 
 export interface UsageQuery {
@@ -456,6 +462,8 @@ function CoverageNotice({ snapshot }: { readonly snapshot: UsagePanelSnapshot })
       ? '覆盖未知：无法确认历史是否完整；下面的数字只代表已观察到的调用，0 不代表未使用。'
       : undefined
   const attribution = usageAttributionLabel(coverage?.workspaceAttribution)
+  const backfill = usageBackfillSummary(snapshot.backfillReasons)
+  const backfillHint = backfill === undefined ? '' : '（回补停止的原因，不是统计口径）'
 
   return (
     <div
@@ -475,10 +483,36 @@ function CoverageNotice({ snapshot }: { readonly snapshot: UsagePanelSnapshot })
           {`原因：${reasons.join('；')}${coverage?.reasonsTruncated === true ? '；另有原因未列出' : ''}`}
         </p>
       )}
+      {backfill !== undefined && (
+        <p className="mc-desc">{`历史回补：${backfill}${backfillHint}`}</p>
+      )}
       {attribution !== undefined && <p className="mc-desc">{attribution}</p>}
       {notes.length > 0 && <p className="mc-desc">{`说明：${notes.join('；')}`}</p>}
     </div>
   )
+}
+
+/** Rank the backfill stop reasons by count so the biggest blocker reads first. */
+const USAGE_BACKFILL_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  budget: '触及预算上限（会话数或事件数）',
+  timeout: '触及墙钟上限',
+  cancelled: '被取消',
+  'backfill-incomplete': '会话未能完整读取',
+  'backfill-disabled-profile-unknown': '无法识别 profile',
+  'backfill-disabled-service-unavailable': '宿主未提供 sessionPersistence 服务',
+  'backfill-runtime-failed': '回补运行时出错',
+})
+
+function usageBackfillSummary(
+  reasons: Readonly<Record<string, number>> | undefined,
+): string | undefined {
+  if (reasons === undefined) return undefined
+  const rows = Object.entries(reasons).filter(([, count]) => count > 0)
+  if (rows.length === 0) return undefined
+  return rows
+    .sort((left, right) => right[1] - left[1])
+    .map(([reason, count]) => `${USAGE_BACKFILL_LABELS[reason] ?? reason} × ${count}`)
+    .join('；')
 }
 
 function usageMetrics(
