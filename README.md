@@ -1,13 +1,18 @@
 # dsh-thinking-guard
 
-把 DSH 的能力目录、按需调用和 Agent 效率守卫整合为一个插件。
+一个 DSH 插件：把**能力目录与按需调用**（Capability Menu 思路）和 **Agent 效率守卫**（重复/循环调用提醒）整合在一起。当前版本 **0.1.15**。
 
-## 功能
+## 它做什么
 
-- `meta_search` 按需查找能力，`meta_invoke` 调用能力。
-- Resident、On-demand、Disabled 三档策略；Disabled 会在执行入口拒绝调用。
-- 按 Agent / Turn 跟踪 Step 与业务 Tool 调用；循环核心按相同结果/错误证据提供 3/5/8 次重复提醒及 A-B 循环提醒，并仅对匹配调用局部拒绝一次，不停止整个 Turn。
-- 工具结果压缩与原文恢复由 [dsh-plugin-save-token](https://github.com/YAN3RA/dsh-plugin-save-token) 负责；模型、Provider 和完整会话由 DSH 宿主负责。
+- `meta_search` 按需查找能力，`meta_invoke` 调用能力；工具与技能按 Resident / On-demand / Disabled 三档分层，Disabled 会在执行入口拒绝调用，不只是隐藏 Schema。
+- Guard 按 Agent / Turn 隔离，用工具签名与 Step 的结果/错误指纹做重复与 A-B 循环检测；只在证据满足门槛时对匹配调用局部拒绝一次，**不停止整个 Turn**。
+- 设置页提供四个页面：总览、防循环、调用统计、能力目录。
+
+## 它不做什么
+
+- 不做工具结果压缩与原文恢复——那是 [dsh-plugin-save-token](https://github.com/YAN3RA/dsh-plugin-save-token) 的职责。
+- 不做模型 / Provider / 完整会话管理——那是 DSH 宿主的职责。
+- 不读取、保存或输出隐藏思维链。
 
 ## 安装
 
@@ -180,6 +185,23 @@ ls -t ~/.dsh/profiles/desktop/.plugin-manager/logs | head
 ## 配置
 
 默认 Guard 模式为 `normal`。当前 Step、Tool 次数、Duration 阈值只保留配置校验和计数，不触发软提醒或硬停止。`stepLimitMode: hard-stop` 会归一为 `warn-only`，`duplicateHardBlock: true` 会归一为 `false`，启动时分别记录弃用提示。开启 `duplicateDetection` 时，连续重复的第 3/5/8 次与有证据的 A-B 循环会提醒；只有相同操作及结果/错误指纹满足策略门槛后，才会通过 `tools.guard` 对匹配调用局部拒绝一次，不停止整个 Turn。配置位于插件 root entry 的 `config.guard`，状态按 Agent / Turn 隔离。
+
+## 文档入口
+
+本文件就是代码仓的 README（工作区里位于 `01_Source_Code/README.md`）。其余文档在**工作区根**，不随仓库发布：
+
+| 想做的事 | 去哪 |
+|---|---|
+| 找任意文档 | 根目录 `PROJECT_INDEX.md` |
+| 看现在做到哪 / 接手 | 根目录 `HANDOFF.md` |
+| 长期规则与开发规范 | 根目录 `AGENTS.md` |
+| 查架构与模块方案 | 工作区根下 `01_Source_Code/docs/ARCHITECTURE.md`（本地保留） |
+| 查历史与归档 | 根目录 `04_Docs/02_history/README.md` |
+
+## 目录约定
+
+- 本目录是**唯一代码仓**（独立 git，远端 `YAN3RA/dsh-thinking-guard`）。
+- 仓库只发布**源码 + 测试 + 本 README**。`AGENTS.md` / `PROJECT_INDEX.md` / `HANDOFF.md` 与 `docs/` 均为本地保留，不提交。
 
 ## 来源与许可
 

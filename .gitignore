@@ -46,3 +46,9 @@ logs/
 
 # Internal project docs: kept locally only, not published with the repo
 /docs/
+
+# Project-layer documents live in the workspace root, not in the repository.
+# Guard against re-adding them here by mistake.
+/AGENTS.md
+/PROJECT_INDEX.md
+/HANDOFF.md
