@@ -2,19 +2,19 @@
 # layer, from a single installable package.
 #
 # One package, five plugin entries — four mount a subpath of
-# `dsh-agent-efficiency-guard` (the loader resolves package subpath exports; see
+# `dsh-thinking-guard` (the loader resolves package subpath exports; see
 # `@deepseek-ai/dsh-web-app/startup` for the same pattern in the harness), and
 # the root entry loads the package main to mount the browser-facing gateway
 # (and thereby registers the package itself as a `dsh.client` loader entry):
 #
 #   - id: capability-menu-registry
-#     name: 'dsh-agent-efficiency-guard/registry'
+#     name: 'dsh-thinking-guard/registry'
 #   - id: capability-menu-search
-#     name: 'dsh-agent-efficiency-guard/search'
+#     name: 'dsh-thinking-guard/search'
 #   - id: capability-menu-invoke
-#     name: 'dsh-agent-efficiency-guard/invoke'
+#     name: 'dsh-thinking-guard/invoke'
 #   - id: capability-menu-policy
-#     name: 'dsh-agent-efficiency-guard/policy'
+#     name: 'dsh-thinking-guard/policy'
 #       config:
 #         # Rule syntax — tier keys `resident` / `on-demand` / `disabled`
 #         # (exact names, `*` globs, or `server:<name>:*`), plus `metaTools` —
@@ -60,13 +60,13 @@
   disabled: false
 - insert:
     - id: capability-menu-registry
-      name: 'dsh-agent-efficiency-guard/registry'
+      name: 'dsh-thinking-guard/registry'
     - id: capability-menu-search
-      name: 'dsh-agent-efficiency-guard/search'
+      name: 'dsh-thinking-guard/search'
     - id: capability-menu-invoke
-      name: 'dsh-agent-efficiency-guard/invoke'
+      name: 'dsh-thinking-guard/invoke'
     - id: capability-menu-policy
-      name: 'dsh-agent-efficiency-guard/policy'
+      name: 'dsh-thinking-guard/policy'
       config:
         # Native coding tools are cataloged under the reserved `built-in`
         # pseudo-server and are fully manageable like MCP tools. Unlisted
@@ -89,8 +89,8 @@
     # exposes ctx.capabilityPolicy to the browser. Makes this package a loader
     # entry itself so @deepseek-ai/dsh-client-modules discovers its `dsh.client`
     # declaration and serves the 能力菜单 browser bundle (`./client`).
-    - id: agent-efficiency-guard
-      name: 'dsh-agent-efficiency-guard'
+    - id: thinking-guard
+      name: 'dsh-thinking-guard'
       config:
         guard:
           enabled: true

@@ -1,4 +1,4 @@
-# dsh-agent-efficiency-guard
+# dsh-thinking-guard
 
 把 DSH 的能力目录、按需调用和 Agent 效率守卫整合为一个插件。
 
@@ -20,12 +20,12 @@
 复制下面整段，粘贴给 DSH：
 
 ```
-帮我安装 dsh-agent-efficiency-guard。请按顺序做：
+帮我安装 dsh-thinking-guard。请按顺序做：
 
-1. 读 https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/docs/install.md
+1. 读 https://raw.githubusercontent.com/YAN3RA/dsh-thinking-guard/main/docs/install.md
    的「方式三：手动」，用里面的命令完成安装。
 2. 装完确认 ~/.dsh/profiles/desktop/package.json 的 dsh.profile.bundles 里有
-   "dsh-agent-efficiency-guard"（没有就告诉我，别自己猜）。
+   "dsh-thinking-guard"（没有就告诉我，别自己猜）。
 3. 报告装到的版本号，然后提醒我重启 DSH。
 ```
 
@@ -34,7 +34,7 @@
 ### 方式二：一条命令（Windows PowerShell）
 
 ```powershell
-$f="$env:TEMP\install-guard.ps1"; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/scripts/install.ps1' -OutFile $f; pwsh -NoProfile -File $f
+$f="$env:TEMP\install-guard.ps1"; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/YAN3RA/dsh-thinking-guard/main/scripts/install.ps1' -OutFile $f; pwsh -NoProfile -File $f
 ```
 
 需要代理时末尾加 `-Proxy http://127.0.0.1:7890`；`-DryRun` 只看不改；`-Version v0.1.12` 装指定版本。
@@ -45,7 +45,7 @@ $f="$env:TEMP\install-guard.ps1"; Invoke-WebRequest -UseBasicParsing 'https://ra
 1. 取最新 Release 的带哈希附件 URL：
 
    ```bash
-   curl -s https://api.github.com/repos/YAN3RA/dsh-agent-efficiency-guard/releases/latest \
+   curl -s https://api.github.com/repos/YAN3RA/dsh-thinking-guard/releases/latest \
      | grep -o 'https://[^"]*\.tgz'
    ```
 

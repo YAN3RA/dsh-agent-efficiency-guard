@@ -83,7 +83,7 @@ import { resolveUsageProfile, type UsageProfileUnavailableReason } from './usage
 
 const DEFAULT_MAX_QUEUE = 1_024
 const DEFAULT_MAX_BATCH = 128
-const LOG_PREFIX = 'agent-efficiency-guard usage-runtime'
+const LOG_PREFIX = 'thinking-guard usage-runtime'
 const WARN_CODE_LIMIT = 32
 
 /**

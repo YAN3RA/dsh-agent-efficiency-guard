@@ -32,7 +32,7 @@
 import { createHash } from 'node:crypto'
 
 /** Persisted envelope schema id. Changing it is a storage-format change. */
-export const USAGE_PROFILE_SCHEMA = 'dsh-agent-efficiency-guard/usage-profile'
+export const USAGE_PROFILE_SCHEMA = 'dsh-thinking-guard/usage-profile'
 /** First and only envelope version. Unknown versions are rejected as a whole. */
 export const USAGE_PROFILE_SCHEMA_VERSION = 1
 /** Length of the lowercase SHA-256 hex partition key. */
@@ -50,7 +50,7 @@ export const USAGE_PROFILE_MAX_PAYLOAD_DEPTH = 64
  * partition becomes unreachable: the domain is part of the stored key, not a
  * versioned envelope field.
  */
-const HASH_DOMAIN = 'dsh-agent-efficiency-guard/usage-profile\u0000'
+const HASH_DOMAIN = 'dsh-thinking-guard/usage-profile\u0000'
 
 /**
  * Characters that cannot appear in a profile identity.

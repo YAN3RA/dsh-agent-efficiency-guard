@@ -62,7 +62,7 @@ function installUsageRoot(ctx: Context): void {
 }
 
 /** Root plugin identity (matches the `capability-menu` patch entry id). */
-export const name = 'agent-efficiency-guard'
+export const name = 'thinking-guard'
 
 /**
  * Root entry: mount the browser-facing capabilityPolicy gateway and claim its

@@ -150,10 +150,10 @@ describe('usage collector codec', () => {
   it('round-trips the usage payload and every Session watermark', () => {
     const state = richCollector()
     const document = encodeUsageCollectorState(state)
-    expect(document.schema).toBe('dsh-agent-efficiency-guard/usage-collector')
+    expect(document.schema).toBe('dsh-thinking-guard/usage-collector')
     expect(document.version).toBe(1)
     expect(Object.keys(document).sort()).toEqual(['schema', 'sessions', 'usage', 'version'])
-    expect(document.usage.schema).toBe('dsh-agent-efficiency-guard/usage-state')
+    expect(document.usage.schema).toBe('dsh-thinking-guard/usage-state')
     expect(document.sessions).toHaveLength(3)
 
     const decoded = decodeUsageCollectorStateJson(encodeUsageCollectorStateJson(state))
@@ -280,7 +280,7 @@ describe('usage collector codec', () => {
     expectCode(() => decodeUsageCollectorState(missing), 'invalid-document')
 
     const wrongSchema = rawDocument()
-    wrongSchema.schema = 'dsh-agent-efficiency-guard/usage-state'
+    wrongSchema.schema = 'dsh-thinking-guard/usage-state'
     expectCode(() => decodeUsageCollectorState(wrongSchema), 'invalid-document')
   })
 

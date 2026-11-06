@@ -185,7 +185,7 @@ describe('usage wire bounds', () => {
       expect(descriptor.result.mode).toBe('strict')
       // getSnapshot and refresh answer the same contract; a different symbol
       // would mean the browser face and the Host disagree about the shape.
-      expect(descriptor.result.typeSymbol).toBe('dsh-agent-efficiency-guard#UsageSnapshot')
+      expect(descriptor.result.typeSymbol).toBe('dsh-thinking-guard#UsageSnapshot')
     }
   })
 })

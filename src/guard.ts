@@ -23,12 +23,12 @@ import {
   type PendingLoopObservation,
   type TurnState,
 } from './guard-core.ts'
-export const name = 'agent-efficiency-guard'
+export const name = 'thinking-guard'
 export const inject = ['tools', 'capabilityPolicy']
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
-    'agent-efficiency-guard': { kind: 'agent-efficiency-guard' }
+    'thinking-guard': { kind: 'thinking-guard' }
   }
 }
 
@@ -172,7 +172,7 @@ function outcomeFor(result: Readonly<ToolExecutionResult>): GuardToolOutcome {
 function shortMessage(text: string): UserMessage {
   return createUserMessage({
     content: [{ type: 'text', text }],
-    source: { kind: 'agent-efficiency-guard' },
+    source: { kind: 'thinking-guard' },
   })
 }
 
@@ -268,10 +268,10 @@ function readSwitches(ctx: Context, config: Config): Required<Pick<Config,
  */
 export function apply(ctx: Context, config: Config = {}): void {
   if (config.stepLimitMode === 'hard-stop') {
-    ctx.logger.warn('agent-efficiency-guard: stepLimitMode=hard-stop is deprecated and ignored; normal task steps are never blocked by hardSteps')
+    ctx.logger.warn('thinking-guard: stepLimitMode=hard-stop is deprecated and ignored; normal task steps are never blocked by hardSteps')
   }
   if (config.duplicateHardBlock === true) {
-    ctx.logger.warn('agent-efficiency-guard: duplicateHardBlock is deprecated and ignored; duplicate calls are advisory until no-progress evidence is confirmed')
+    ctx.logger.warn('thinking-guard: duplicateHardBlock is deprecated and ignored; duplicate calls are advisory until no-progress evidence is confirmed')
   }
   const guard = new EfficiencyGuard(toGuardConfig(config))
   const disposers: Array<() => void> = []
@@ -377,8 +377,8 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   disposers.push(ctx.on('agent/disposed', ({ agent }) => guard.states.clear(agent)))
 
-  ctx.logger.info(`agent-efficiency-guard: ${guard.config.enabled ? 'enabled' : 'disabled'}; host Token Saver/Prompt Cache remain owned by the host and existing Save Token plugin`)
+  ctx.logger.info(`thinking-guard: ${guard.config.enabled ? 'enabled' : 'disabled'}; host Token Saver/Prompt Cache remain owned by the host and existing Save Token plugin`)
   ctx.effect(() => () => {
     for (const dispose of disposers.splice(0)) dispose()
-  }, 'agent-efficiency-guard: cleanup')
+  }, 'thinking-guard: cleanup')
 }

@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    Install or upgrade dsh-agent-efficiency-guard into a DSH profile without npm.
+    Install or upgrade dsh-thinking-guard into a DSH profile without npm.
 
 .DESCRIPTION
     Resolves the newest Release asset, then installs it through the DSH
@@ -60,8 +60,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$Repo = 'YAN3RA/dsh-agent-efficiency-guard'
-$PackageName = 'dsh-agent-efficiency-guard'
+$Repo = 'YAN3RA/dsh-thinking-guard'
+$PackageName = 'dsh-thinking-guard'
 $ExitOk = 0
 $ExitFailure = 1
 
@@ -141,7 +141,7 @@ function Resolve-DshLauncher {
 
 function Get-Release($ApiUrl) {
     $headers = @{
-        'User-Agent' = 'dsh-agent-efficiency-guard-installer'
+        'User-Agent' = 'dsh-thinking-guard-installer'
         'Accept'     = 'application/vnd.github+json'
     }
     try {

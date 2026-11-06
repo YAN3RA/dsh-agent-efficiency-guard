@@ -140,7 +140,7 @@ describe('usage state codec', () => {
   it('round-trips the full usage state without losing metadata', () => {
     const state = richState()
     const document = encodeUsageState(state)
-    expect(document.schema).toBe('dsh-agent-efficiency-guard/usage-state')
+    expect(document.schema).toBe('dsh-thinking-guard/usage-state')
     expect(document.version).toBe(1)
     expect(() => JSON.stringify(document)).not.toThrow()
 

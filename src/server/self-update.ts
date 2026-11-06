@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { lstat, readFile, readdir, realpath, unlink, writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 
-const PACKAGE = 'dsh-agent-efficiency-guard'
+const PACKAGE = 'dsh-thinking-guard'
 const execFileAsync = promisify(execFile)
 
 /**
@@ -108,7 +108,7 @@ async function activeProfile(root: string): Promise<{ name: string; dir: string;
 }
 
 async function latestVersion(): Promise<string> {
-  const response = await fetch('https://registry.npmjs.org/dsh-agent-efficiency-guard/latest', {
+  const response = await fetch('https://registry.npmjs.org/dsh-thinking-guard/latest', {
     signal: AbortSignal.timeout(10_000),
     headers: { accept: 'application/json' },
   })

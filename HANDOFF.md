@@ -1,6 +1,6 @@
 # HANDOFF
 
-更新：2026-11-06 20:15。仓库：`YAN3RA/dsh-agent-efficiency-guard`；分支：`main`；已发布 **v0.1.13**。
+更新：2026-11-06 20:15。仓库：`YAN3RA/dsh-thinking-guard`；分支：`main`；已发布 **v0.1.13**。
 
 ## 当前状态（一句话）
 
@@ -115,15 +115,15 @@ Guard 每次调用经 `ctx.capabilityPolicy.getGuard()` 读实时值，所以拨
 
 - commit `7babecf`（兼容 + UI）、`f6c7a69`（版本号）
 - tag `v0.1.10` 已推送
-- Release：https://github.com/YAN3RA/dsh-agent-efficiency-guard/releases/tag/v0.1.10
-- 附件：`dsh-agent-efficiency-guard-0.1.10.tgz`（324369 字节，state=uploaded）
+- Release：https://github.com/YAN3RA/dsh-thinking-guard/releases/tag/v0.1.10
+- 附件：`dsh-thinking-guard-0.1.10.tgz`（324369 字节，state=uploaded）
 
 ### 5. profile 安装来源已切回 Release 附件
 
 `~/.dsh/profiles/desktop/package.json` 现为：
 
 ```
-"dsh-agent-efficiency-guard": "https://github.com/YAN3RA/dsh-agent-efficiency-guard/releases/download/v0.1.10/dsh-agent-efficiency-guard-0.1.10.tgz"
+"dsh-thinking-guard": "https://github.com/YAN3RA/dsh-thinking-guard/releases/download/v0.1.10/dsh-thinking-guard-0.1.10.tgz"
 ```
 
 核实结果：
@@ -138,7 +138,7 @@ Guard 每次调用经 `ctx.capabilityPolicy.getGuard()` 读实时值，所以拨
 
 ### 6. 清理
 
-已删除：`%TEMP%\css-prune-backup`（3 个 11-05 的 CSS 清理备份）、`%TEMP%\tgz-trash-latest`（0.1.7/0.1.8 旧包）、仓库内 `dsh-agent-efficiency-guard-0.1.9.tgz`。删除前已核对路径与文件清单。
+已删除：`%TEMP%\css-prune-backup`（3 个 11-05 的 CSS 清理备份）、`%TEMP%\tgz-trash-latest`（0.1.7/0.1.8 旧包）、仓库内 `dsh-thinking-guard-0.1.9.tgz`。删除前已核对路径与文件清单。
 
 ## 二、未完成 / 未验证（必须知道）
 
@@ -156,7 +156,7 @@ Guard 每次调用经 `ctx.capabilityPolicy.getGuard()` 读实时值，所以拨
 2. ~~给思考限制接真实读写~~ — **已在 v0.1.11 完成**（见「零、v0.1.11 变更」）。
 3. ~~总览接入 Guard 与策略统计~~ — **已在 v0.1.11 完成**。
 4. **UI 预览稿同步** — `docs/design/preview/index.html` 已按同一套改动更新（56 项断言通过），但与真实页仍有差异（真实页无「未完成/失败率」列）。成本 10 分钟，可选。
-5. **清理 `lib/` 与 node_modules 之外残留** — 仓库内 `dsh-agent-efficiency-guard-0.1.10.tgz` 是发布产物，`.gitignore` 已忽略，确认无需保留后可删。成本 1 分钟。
+5. **清理 `lib/` 与 node_modules 之外残留** — 仓库内 `dsh-thinking-guard-0.1.10.tgz` 是发布产物，`.gitignore` 已忽略，确认无需保留后可删。成本 1 分钟。
 
 ## 三点四、v0.1.13 变更
 
@@ -173,7 +173,7 @@ Guard 每次调用经 `ctx.capabilityPolicy.getGuard()` 读实时值，所以拨
 ### 2. 发布流程：附件名带内容哈希（已固化）
 
 `scripts/release.mjs`：构建 → 打包 → 按 tarball SHA-256 前 8 位重命名 → 打印附件名与上传命令。
-v0.1.13 自身就是用这个脚本发的（`dsh-agent-efficiency-guard-0.1.13-2a6cdcae.tgz`）。
+v0.1.13 自身就是用这个脚本发的（`dsh-thinking-guard-0.1.13-2a6cdcae.tgz`）。
 
 ### 3. 一键安装（不用 npm）
 
@@ -183,7 +183,7 @@ v0.1.13 自身就是用这个脚本发的（`dsh-agent-efficiency-guard-0.1.13-2
 - `docs/install.md`：安装 / 升级 / 卸载 / 排错全流程。
 
 **注意仓库根就是 `plugin/`**，raw URL 是
-`https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/scripts/install.ps1`
+`https://raw.githubusercontent.com/YAN3RA/dsh-thinking-guard/main/scripts/install.ps1`
 （没有 `plugin/` 前缀——曾写错并已修正，两个 URL 均已验证 200）。
 
 ### 4. 「196 个工具全按需」的成因与恢复工具
@@ -209,7 +209,7 @@ UI 批量把工具设为按需后，patch 里 7 项常驻有 6 项被覆盖（`b
 
 | 操作 | `dsh.profile.bundles` 结果 |
 | --- | --- |
-| `dsh plugin --profile X add <附件URL>` | 自动追加 `dsh-agent-efficiency-guard` ✅ |
+| `dsh plugin --profile X add <附件URL>` | 自动追加 `dsh-thinking-guard` ✅ |
 | 手改 `dependencies` + `pnpm install` | **保持原样，不登记** ❌ |
 
 `dsh plugin` 的 help 原文：`forwarding the remaining arguments to pnpm in the profile directory`，
@@ -240,7 +240,7 @@ dsh plugin --profile desktop add <带哈希的附件 URL>
 
 **Release 附件 URL 被 pnpm 按 URL 缓存 integrity，覆盖同名附件后不会重新下载。**
 
-现象：把修好的 tarball 覆盖上传成同名 `dsh-agent-efficiency-guard-0.1.12.tgz` 后，`pnpm install --force`、`store prune`、删 `node_modules` 全部无效，装进去的仍是旧 `lib/client.js`（404175 vs 应为 404537）。
+现象：把修好的 tarball 覆盖上传成同名 `dsh-thinking-guard-0.1.12.tgz` 后，`pnpm install --force`、`store prune`、删 `node_modules` 全部无效，装进去的仍是旧 `lib/client.js`（404175 vs 应为 404537）。
 
 排查结论：
 - 解包本地 tarball 核对：**tarball 本身是正确的**（404537，含新代码）。
@@ -251,7 +251,7 @@ dsh plugin --profile desktop add <带哈希的附件 URL>
 正确做法：**用带内容指纹的附件名**，让 URL 变化：
 
 ```
-dsh-agent-efficiency-guard-0.1.12-d3ee6d6d.tgz   # d3ee6d6d = tgz 的 sha256 前 8 位
+dsh-thinking-guard-0.1.12-d3ee6d6d.tgz   # d3ee6d6d = tgz 的 sha256 前 8 位
 ```
 
 `~/.dsh/profiles/desktop/package.json` 已指向该带哈希的附件。旧的同名附件已从 Release 删除，避免下次又被误装。

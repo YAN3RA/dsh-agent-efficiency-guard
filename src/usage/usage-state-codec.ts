@@ -22,7 +22,7 @@ import type {
  * missing/extra field, a wrong type, or a value over its budget is rejected as
  * a whole; no map, set, counter, or string is silently cleared or truncated.
  */
-export const USAGE_STATE_SCHEMA = 'dsh-agent-efficiency-guard/usage-state'
+export const USAGE_STATE_SCHEMA = 'dsh-thinking-guard/usage-state'
 export const USAGE_STATE_SCHEMA_VERSION = 1
 
 export type UsageStateCodecErrorCode =

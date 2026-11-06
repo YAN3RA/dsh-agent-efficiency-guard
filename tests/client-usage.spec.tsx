@@ -216,7 +216,7 @@ const richSnapshot: UsagePanelSnapshot = {
   filters: {
     ranges: [7, 15, 30],
     workspaces: [
-      { id: 'ws-1', label: 'dsh-agent-efficiency-guard' },
+      { id: 'ws-1', label: 'dsh-thinking-guard' },
       { id: 'ws-2', label: '另一个工作区' },
     ],
     kinds: ['mcp', 'skill', 'plugin-tool', 'native', 'unknown'],
@@ -339,7 +339,7 @@ describe('usage panel real data', () => {
     expect(text).toContain('30 天 0 调用候选\n2')
 
     expect(text).toContain('全部工作区')
-    expect(text).toContain('dsh-agent-efficiency-guard')
+    expect(text).toContain('dsh-thinking-guard')
     expect(text).toContain('全部类型')
     expect(text).toContain('类型：MCP')
 

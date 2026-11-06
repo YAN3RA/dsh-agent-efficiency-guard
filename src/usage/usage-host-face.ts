@@ -37,7 +37,7 @@
  * drift, `tests/usage-remote.spec.ts` parses real gateway output with the
  * browser codecs).
  *
- * @module dsh-agent-efficiency-guard/usage/usage-host-face
+ * @module dsh-thinking-guard/usage/usage-host-face
  */
 
 // `@deepseek-ai/dsh-typert-protocol` augments this same cordis `Context` with

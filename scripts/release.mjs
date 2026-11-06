@@ -85,7 +85,7 @@ const { rename } = await import('node:fs/promises')
 await rename(join(ROOT, plain), join(ROOT, hashed))
 
 const tag = `v${version}`
-const repo = 'YAN3RA/dsh-agent-efficiency-guard'
+const repo = 'YAN3RA/dsh-thinking-guard'
 const url = `https://github.com/${repo}/releases/download/${tag}/${hashed}`
 
 console.log('')

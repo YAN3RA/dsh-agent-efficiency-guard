@@ -131,7 +131,7 @@
     "homeHttpStatus": 200,
     "capabilityPolicyHttpStatus": 404,
     "packagesRemoved": [
-      "dsh-agent-efficiency-guard",
+      "dsh-thinking-guard",
       "dsh-plugin-save-token",
       "dsh-mcp-connector"
     ],

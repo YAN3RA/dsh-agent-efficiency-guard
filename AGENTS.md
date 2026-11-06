@@ -1,4 +1,4 @@
-# dsh-agent-efficiency-guard
+# dsh-thinking-guard
 
 ## 项目概述
 

@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsdown'
 import { readFileSync } from 'node:fs'
 
-const id = 'dsh-agent-efficiency-guard'
+const id = 'dsh-thinking-guard'
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
 export default defineConfig([{

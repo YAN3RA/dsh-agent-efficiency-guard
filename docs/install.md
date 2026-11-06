@@ -1,6 +1,6 @@
 # 安装、升级与卸载
 
-本插件**不通过 npm registry 分发**（`registry.npmjs.org` 上没有这个包，`pnpm add dsh-agent-efficiency-guard`
+本插件**不通过 npm registry 分发**（`registry.npmjs.org` 上没有这个包，`pnpm add dsh-thinking-guard`
 会 `ERR_PNPM_FETCH_404`）。安装来源是 GitHub Release 附件（`.tgz`），由 DSH 自己的包管理入口
 `dsh plugin --profile <name> add <附件URL>` 装进 profile。
 
@@ -11,12 +11,12 @@
 复制整段粘贴给 DSH：
 
 ```
-帮我安装 dsh-agent-efficiency-guard。请按顺序做：
+帮我安装 dsh-thinking-guard。请按顺序做：
 
-1. 读 https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/docs/install.md
+1. 读 https://raw.githubusercontent.com/YAN3RA/dsh-thinking-guard/main/docs/install.md
    的「方式三：手动」，用里面的命令完成安装。
 2. 装完确认 ~/.dsh/profiles/desktop/package.json 的 dsh.profile.bundles 里有
-   "dsh-agent-efficiency-guard"（没有就告诉我，别自己猜）。
+   "dsh-thinking-guard"（没有就告诉我，别自己猜）。
 3. 报告装到的版本号，然后提醒我重启 DSH。
 ```
 
@@ -29,7 +29,7 @@
 ## 方式二：一条命令（Windows PowerShell）
 
 ```powershell
-$f="$env:TEMP\install-guard.ps1"; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/scripts/install.ps1' -OutFile $f; pwsh -NoProfile -File $f
+$f="$env:TEMP\install-guard.ps1"; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/YAN3RA/dsh-thinking-guard/main/scripts/install.ps1' -OutFile $f; pwsh -NoProfile -File $f
 ```
 
 需要代理时在末尾加 `-Proxy http://127.0.0.1:7890`。
@@ -53,7 +53,7 @@ pin、`dsh.profile.bundles` 是否含该包 → 提示重启。参数：
 
 ```bash
 # 1. 取最新 Release 的带哈希附件 URL（本机实测无需代理也能通）
-curl -s https://api.github.com/repos/YAN3RA/dsh-agent-efficiency-guard/releases/latest \
+curl -s https://api.github.com/repos/YAN3RA/dsh-thinking-guard/releases/latest \
   | grep -o 'https://[^"]*\.tgz'
 ```
 
@@ -61,13 +61,13 @@ curl -s https://api.github.com/repos/YAN3RA/dsh-agent-efficiency-guard/releases/
 
 ```bash
 # 2. 用 DSH 自己的入口安装；它会同时把包登记进 dsh.profile.bundles
-dsh plugin --profile desktop add 'https://github.com/YAN3RA/dsh-agent-efficiency-guard/releases/download/v0.1.13/dsh-agent-efficiency-guard-0.1.13-2a6cdcae.tgz'
+dsh plugin --profile desktop add 'https://github.com/YAN3RA/dsh-thinking-guard/releases/download/v0.1.13/dsh-thinking-guard-0.1.13-2a6cdcae.tgz'
 ```
 
 ```bash
 # 3. 核对：pin 的 URL、装到的版本、是否已登记进 bundles
-node -e "const m=require(process.env.HOME+'/.dsh/profiles/desktop/package.json'); console.log('pinned:', m.dependencies['dsh-agent-efficiency-guard']); console.log('bundled:', m.dsh.profile.bundles.includes('dsh-agent-efficiency-guard'))"
-grep '"version"' ~/.dsh/profiles/desktop/node_modules/dsh-agent-efficiency-guard/package.json
+node -e "const m=require(process.env.HOME+'/.dsh/profiles/desktop/package.json'); console.log('pinned:', m.dependencies['dsh-thinking-guard']); console.log('bundled:', m.dsh.profile.bundles.includes('dsh-thinking-guard'))"
+grep '"version"' ~/.dsh/profiles/desktop/node_modules/dsh-thinking-guard/package.json
 ```
 
 期望 `bundled: true`，版本号等于你装的那个 tag。**最后重启 DSH**，否则加载的还是旧代码。
@@ -136,7 +136,7 @@ node scripts/release.mjs
 | 本地 `.tgz` 绝对路径 | ✅ 可用 | 会记成 `file:...`。只在同机自测有意义，换机即失效 |
 | `git+https://github.com/…git` / `github:owner/repo` | ❌ 默认失败 | 见下 |
 | `link:<本地目录>` | ⚠️ 能装，不推荐 | 软链到源码目录，peer 依赖不从目标 `node_modules` 解析；仓库里没有 `lib/` 时还缺构建产物 |
-| 裸包名 `dsh-agent-efficiency-guard` | ❌ 404 | 包没发布到 npm registry |
+| 裸包名 `dsh-thinking-guard` | ❌ 404 | 包没发布到 npm registry |
 
 ### git 直装为什么不可用
 
@@ -145,7 +145,7 @@ node scripts/release.mjs
 默认拦截构建脚本：
 
 ```
-ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED: The git-hosted package "dsh-agent-efficiency-guard@0.1.13"
+ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED: The git-hosted package "dsh-thinking-guard@0.1.13"
 needs to execute build scripts but is not in the "allowBuilds" allowlist.
 ```
 
@@ -172,7 +172,7 @@ needs to execute build scripts but is not in the "allowBuilds" allowlist.
 ## 卸载
 
 ```bash
-dsh plugin --profile desktop remove dsh-agent-efficiency-guard
+dsh plugin --profile desktop remove dsh-thinking-guard
 ```
 
 一条命令同时清掉 `dependencies` 与 `dsh.profile.bundles`（已实测）。然后重启 DSH。
@@ -191,7 +191,7 @@ dsh plugin --profile desktop remove dsh-agent-efficiency-guard
 先查这一条，它解释了绝大多数情况：
 
 ```bash
-node -e "const m=require(process.env.HOME+'/.dsh/profiles/desktop/package.json'); console.log('bundled:', m.dsh.profile.bundles.includes('dsh-agent-efficiency-guard'))"
+node -e "const m=require(process.env.HOME+'/.dsh/profiles/desktop/package.json'); console.log('bundled:', m.dsh.profile.bundles.includes('dsh-thinking-guard'))"
 ```
 
 `false` → 当初是手改 JSON + `pnpm install` 装的，包在但没挂载。
@@ -204,7 +204,7 @@ node -e "const m=require(process.env.HOME+'/.dsh/profiles/desktop/package.json')
 几乎一定是缓存问题。比对安装目录与 Release 附件里的 `lib/client.js` 大小：
 
 ```bash
-ls -la ~/.dsh/profiles/desktop/node_modules/dsh-agent-efficiency-guard/lib/client.js
+ls -la ~/.dsh/profiles/desktop/node_modules/dsh-thinking-guard/lib/client.js
 tar -tzvf <下载的 tgz> | grep 'lib/client.js'
 ```
 

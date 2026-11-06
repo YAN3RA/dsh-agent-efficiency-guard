@@ -87,7 +87,7 @@ async function runTool(host: TestHost, call: Execution, result: Result): Promise
 describe('Guard Host hooks', () => {
   it('reports disabled state and does not inject reminders', async () => {
     const host = setup({ enabled: false })
-    expect(host.info.mock.calls.flat().join(' ')).toContain('agent-efficiency-guard: disabled;')
+    expect(host.info.mock.calls.flat().join(' ')).toContain('thinking-guard: disabled;')
     const agent = { inject: vi.fn() }
     const next = vi.fn(async () => ({ kind: 'continue' }))
     expect(await host.hooks.get('agent/pre-step')!({ agent, turn: 1 }, next)).toEqual({ kind: 'continue' })
@@ -207,7 +207,7 @@ describe('Guard Host hooks', () => {
     const same = success({ stable: true })
     for (let i = 1; i <= 8; i++) await runTool(host, makeCall(i), same)
     const reminder = agent.inject.mock.calls[0]?.[0] as { id: string; source: { kind: string } }
-    expect(reminder?.source.kind).toBe('agent-efficiency-guard')
+    expect(reminder?.source.kind).toBe('thinking-guard')
     host.hooks.get('agent/inbox/inserted')!({ agent, message: reminder })
     expect(await runTool(host, makeCall(9), same)).toContain('局部拒绝')
     host.hooks.get('agent/inbox/inserted')!({ agent, message: { id: 'user-1', source: { kind: 'user' } } })

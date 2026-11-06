@@ -1,6 +1,6 @@
 # DSH 0.2.2-rc.1 API 兼容修复影响报告
 
-插件：`dsh-agent-efficiency-guard` 0.1.9
+插件：`dsh-thinking-guard` 0.1.9
 目标宿主：`@deepseek-ai/dsh-*` `0.2.2-rc.1` + `@deepseek-ai/cordis` `4.1.0`
 证据基准：`plugin/node_modules/@deepseek-ai/**` 已安装产物（类型 `.d.ts` 与实现 `lib/*.js`）。
 

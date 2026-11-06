@@ -29,7 +29,7 @@
  * The module is intentionally free of React, browser globals and network code:
  * every rule below is directly testable (`tests/client-usage-adapter.spec.ts`).
  *
- * @module dsh-agent-efficiency-guard/client/usage-adapter
+ * @module dsh-thinking-guard/client/usage-adapter
  */
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {

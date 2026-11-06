@@ -33,7 +33,7 @@
  * `USAGE_TYPERT_REMOTE` from `src/client/usage-remote.ts`. Both are exported
  * here / there so the root entry does not have to know the wire details.
  *
- * @module dsh-agent-efficiency-guard/server/usage-remote
+ * @module dsh-thinking-guard/server/usage-remote
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
@@ -439,7 +439,7 @@ export class UsageGateway extends TypertRemoteService {
 }
 
 /** Register the remote gateway on a context. */
-export const name = 'agent-efficiency-guard-usage-remote'
+export const name = 'thinking-guard-usage-remote'
 
 /**
  * Mount the gateway. Deliberately exports no `inject`: the runtime is optional

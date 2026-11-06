@@ -1,5 +1,5 @@
 {
-  "name": "dsh-agent-efficiency-guard",
+  "name": "dsh-thinking-guard",
   "version": "0.1.7",
   "expectedAnnotatedTag": "v0.1.7",
   "tagCreated": false,
@@ -26,7 +26,7 @@
   "unpackedSize": 858451,
   "sha256": "9afcb5c6d164e81fde217971e46ff836895169ca747bfa126196957fda050003",
   "npmIntegrity": "sha512-wvgTaDvzQoM6hB6eucXlKQD/0wXqFAm+RhbsLJ0b07iy5ErRlemeXY/RVeta2zc35BsN7i2hyX3FeRyBV84LYw==",
-  "artifactLocation": "$PI_SCRATCH_DIR/final-package/dsh-agent-efficiency-guard-0.1.7.tgz",
+  "artifactLocation": "$PI_SCRATCH_DIR/final-package/dsh-thinking-guard-0.1.7.tgz",
   "runtimeVerifiedArtifactSha256": "80e1fe4df1f092f221dc7a77c769617419ba03bb1df47b0bcfc312532106bf87",
   "runtimeFileCountCompared": 60,
   "runtimeFilesIdenticalToSmokeArtifact": true,

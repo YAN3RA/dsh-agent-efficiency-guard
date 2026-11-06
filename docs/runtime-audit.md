@@ -31,7 +31,7 @@ The baseline had:
 - `tests/guard-core.spec.ts`, `tests/guard-loop-core.spec.ts`, and `tests/guard.spec.ts` cover core behavior and Host-hook integration.
 - Fixed existing test fixtures to use `node:os` `tmpdir()` and Windows-safe paths.
 - Updated Typert host-face typing to coexist with the installed `TypertRegistryContract` while preserving the legacy manual registration runtime path.
-- Changed the package and runtime bundle identity to `dsh-agent-efficiency-guard`.
+- Changed the package and runtime bundle identity to `dsh-thinking-guard`.
 
 ## Production boundary
 

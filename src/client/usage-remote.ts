@@ -28,7 +28,7 @@
  *   results. Strings (error codes, coverage reasons, ids) are already bounded by
  *   the collector and cross the wire unchanged.
  *
- * @module dsh-agent-efficiency-guard/client/usage-remote
+ * @module dsh-thinking-guard/client/usage-remote
  */
 import { z } from 'zod'
 import type {
@@ -53,7 +53,7 @@ export type {
 } from '../usage/usage-host-face.ts'
 
 /** Package owning the wire methods; must equal the Host contribution's package. */
-export const USAGE_REMOTE_PACKAGE = 'dsh-agent-efficiency-guard'
+export const USAGE_REMOTE_PACKAGE = 'dsh-thinking-guard'
 
 /** Wire namespace; must equal `USAGE_HOST_FACE_NAMESPACE` on the Host. */
 export const USAGE_REMOTE_NAMESPACE = 'usage'

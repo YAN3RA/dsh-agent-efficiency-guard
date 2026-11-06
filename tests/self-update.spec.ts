@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { windowsCommand } from '../src/server/self-update.ts'
 
 const exec = promisify(execFile)
-const PACKAGE = 'dsh-agent-efficiency-guard'
+const PACKAGE = 'dsh-thinking-guard'
 const previous = '0.1.7'
 const latest = '0.1.8'
 const oldLock = 'original lockfile\n'
@@ -21,7 +21,7 @@ afterEach(async () => {
 describe('windowsCommand', () => {
   it('quotes arguments and wraps the line for /s while keeping the PATH command bare', () => {
     expect(windowsCommand('pnpm', ['add', `${PACKAGE}@${latest}`, '--save-exact']))
-      .toBe('"pnpm "add" "dsh-agent-efficiency-guard@0.1.8" "--save-exact""')
+      .toBe('"pnpm "add" "dsh-thinking-guard@0.1.8" "--save-exact""')
     expect(() => windowsCommand('pnpm & other', [])).toThrow(/unsupported character/)
   })
 

@@ -662,8 +662,8 @@ describe('usage runtime host adapter', () => {
     expect(runtime.report()).toMatchObject({ calls: 1, succeeded: 1 })
     expect(aggregate(runtime.report(), 'bash')).toMatchObject({ workspaceAttribution: 'unknown' })
     const messages = host.warn.mock.calls.map(call => String(call[0]))
-    expect(messages).toContain('agent-efficiency-guard usage-runtime: workspace-list (workspace registry unavailable)')
-    expect(messages).toContain('agent-efficiency-guard usage-runtime: capability-lookup (capability registry unavailable)')
+    expect(messages).toContain('thinking-guard usage-runtime: workspace-list (workspace registry unavailable)')
+    expect(messages).toContain('thinking-guard usage-runtime: capability-lookup (capability registry unavailable)')
   })
 
   it('returns a frozen metadata-only snapshot without event payloads', () => {

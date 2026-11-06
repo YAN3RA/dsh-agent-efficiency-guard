@@ -196,9 +196,13 @@ describe('usage profile partition key', () => {
     expect(first.hash).toHaveLength(USAGE_PROFILE_HASH_LENGTH)
     expect(first.hash).toMatch(/^[a-f0-9]{64}$/)
     // Locks the hash domain: changing it would strand every stored partition.
-    expect(first.hash).toBe('d9b955861c243cc8d7716378de0ac1c40317e45f87f78381e6456d088602e8fb')
+    // The domain carries the package name, so the rename to dsh-thinking-guard
+    // moved these values. That is safe only because the runtime is `memory`-mode
+    // and persists no partition; a future on-disk backend must not repeat this
+    // without a migration.
+    expect(first.hash).toBe('6c66f3440325fce99a479d5dc86ea7a2dd0d4ba845d90dc76f96fcab93f4f61e')
     expect(resolved('工作区-测试').hash)
-      .toBe('23d3ef41b9fabdc749a822b06133f8bc3ec6499fa8a235fde09c61307cf49e2c')
+      .toBe('fe17c779671cf4b3323f81a4405b5bd15e77230db087a849445b5e3b195a74b4')
   })
 
   it('separates case variants, renamed profiles and unicode profiles', () => {

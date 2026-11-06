@@ -24,7 +24,7 @@ import {
  * its own codec. This outer envelope adds one schema version so the watermark
  * layout can evolve independently of the usage aggregates.
  */
-export const USAGE_COLLECTOR_SCHEMA = 'dsh-agent-efficiency-guard/usage-collector'
+export const USAGE_COLLECTOR_SCHEMA = 'dsh-thinking-guard/usage-collector'
 export const USAGE_COLLECTOR_SCHEMA_VERSION = 1
 
 export type UsageCollectorCodecErrorCode = UsageStateCodecErrorCode

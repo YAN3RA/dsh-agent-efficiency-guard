@@ -46,7 +46,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 
 /** Package that owns this face — must equal the package the manifest is registered for. */
-export const HOST_FACE_PACKAGE = 'dsh-agent-efficiency-guard'
+export const HOST_FACE_PACKAGE = 'dsh-thinking-guard'
 
 /** Wire namespace shared with the browser face. */
 export const HOST_FACE_NAMESPACE = 'capabilityPolicy'
@@ -188,7 +188,7 @@ export function capabilityPolicyHostFace(): TypertHostFace {
  * resolvable definition, so the gateway answers
  * `gateway/definition-unavailable: … its strict definition was withdrawn and SRC
  * fallback is forbidden`. Registering `capabilityPolicy` and `usage` as two
- * separate contributions of `dsh-agent-efficiency-guard` produced exactly that
+ * separate contributions of `dsh-thinking-guard` produced exactly that
  * failure in the production Host (`capabilityPolicy.classifyAll`).
  *
  * Merging is safe here because the shapes are disjoint: `schemas` and `model`
