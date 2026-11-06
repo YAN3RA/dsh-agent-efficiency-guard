@@ -158,6 +158,51 @@ Guard 每次调用经 `ctx.capabilityPolicy.getGuard()` 读实时值，所以拨
 4. **UI 预览稿同步** — `docs/design/preview/index.html` 已按同一套改动更新（56 项断言通过），但与真实页仍有差异（真实页无「未完成/失败率」列）。成本 10 分钟，可选。
 5. **清理 `lib/` 与 node_modules 之外残留** — 仓库内 `dsh-agent-efficiency-guard-0.1.10.tgz` 是发布产物，`.gitignore` 已忽略，确认无需保留后可删。成本 1 分钟。
 
+## 三点五、安装缓存坑（本轮踩到，务必记住）
+
+**Release 附件 URL 被 pnpm 按 URL 缓存 integrity，覆盖同名附件后不会重新下载。**
+
+现象：把修好的 tarball 覆盖上传成同名 `dsh-agent-efficiency-guard-0.1.12.tgz` 后，`pnpm install --force`、`store prune`、删 `node_modules` 全部无效，装进去的仍是旧 `lib/client.js`（404175 vs 应为 404537）。
+
+排查结论：
+- 解包本地 tarball 核对：**tarball 本身是正确的**（404537，含新代码）。
+- 远端附件 size 也正确（330946 = 本地）。
+- 但 `pnpm-lock.yaml` 里该 URL 的 `resolution.integrity` 是旧的，pnpm 按 integrity 判定「已满足」，不再取新内容。
+- 手工删 lockfile 里的 packages 条目会导致 `createHeadlessDepGraph` 失败，**不要这么做**。
+
+正确做法：**用带内容指纹的附件名**，让 URL 变化：
+
+```
+dsh-agent-efficiency-guard-0.1.12-d3ee6d6d.tgz   # d3ee6d6d = tgz 的 sha256 前 8 位
+```
+
+`~/.dsh/profiles/desktop/package.json` 已指向该带哈希的附件。旧的同名附件已从 Release 删除，避免下次又被误装。
+
+**以后发版规则：附件名带 tgz 内容哈希，不要复用同名。**
+
+## 三点六、另一个坑：临时便携 git 没有凭据助手
+
+ops_bash 里的 `git` 是 dsh-ops 的临时便携版（`niugit`），`credential.helper=manager` 找不到对应可执行文件，推送会报
+`git: 'credential-manager' is not a git command`。
+
+推送必须用系统 Git 且把 GCM 目录放进 PATH：
+
+```bash
+export PATH="/c/Program Files/Git/ucrt64/bin:$PATH"
+"/c/Program Files/Git/cmd/git.exe" -c http.proxy=http://127.0.0.1:7890 push origin main --tags
+```
+
+## 三点七、调用统计的覆盖状态说明（用户提问的答案）
+
+`unknown` 是**保守设计**，不是 bug：
+
+- `src/client/usage-adapter.ts` 的 `mergeCoverage()`：**最差状态胜出**。一个会话读不出来，整页就是 `unknown`；一个会话部分缺失就是 `partial`。
+- 没有任何 coverage 条目时也是 `unknown`，而不是 `complete` ——「没有报告」不等于「没有缺失」。
+- 因此「覆盖未知：…0 不代表未使用」是**正确的诚实表述**，不能改成看起来更好的文案。
+- 要让状态变 `complete`，需要每个被统计的会话都成功读到事件且没有跳过/截断（`skippedSessions=0`、`skippedEvents=0`、未触达聚合上限）。
+
+**顺带发现（重要）：** 生产状态文件里 **196 个工具全部是 `on-demand`，没有一项 resident**。这解释了当前会话为何所有工具都要经检索才可用；也让总览的「常驻」数字接近 0。
+
 ## 四、网络与推送规程（本轮实测）
 
 - 直连 GitHub `push` 与 `pnpm install` 都可能超时；**代理 `http://127.0.0.1:7890` 可用**。
