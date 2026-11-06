@@ -1,10 +1,50 @@
 # HANDOFF
 
-更新：2026-11-06 02:45。仓库：`YAN3RA/dsh-agent-efficiency-guard`；分支：`main`；已发布 **v0.1.10**。
+更新：2026-11-06 18:25。仓库：`YAN3RA/dsh-agent-efficiency-guard`；分支：`main`；已发布 **v0.1.11**。
 
 ## 当前状态（一句话）
 
-v0.1.10 已提交、已推送、已发布 Release（含 tarball 附件）；本机 profile 已从 `link:` 切回 Release 附件 URL 并安装 0.1.10；**Host 未重启，新 UI 尚未在 GUI 中生效**。
+v0.1.11 已提交、已推送、已发布 Release（含 tarball 附件）；本机 profile 已安装 0.1.11；**Host 未重启，0.1.11 的改动尚未在 GUI 中生效**。
+
+v0.1.11 的核心：思考限制的三个开关**不再是假的**。此前 Guard 只有一个 `duplicateDetection` 总闸，而页面展示三个独立开关，其中两个改了不产生任何效果。
+
+## 零、v0.1.11 变更（本轮）
+
+### Guard 三段能力拆开并真正生效
+
+| 开关 | 关闭后的真实行为 |
+| --- | --- |
+| `duplicate_call`（相同调用重复提醒） | 不再对重复调用发出提醒 |
+| `alternating_cycle`（交替循环识别） | 检测器不再报告 A→B→A→B 循环 |
+| `no_progress`（无进展保护） | 仍提醒，但**不再**局部拒绝任何调用 |
+
+新增配置字段 `alternatingCycleDetection` / `noProgressProtection`（`guard-core.ts`、`guard.ts`），在 `guard-loop-core.ts` 的检测器里被真实遵守：`cycleSize` 受交替循环开关控制，`blockCandidate` 受无进展保护开关控制。
+
+### 持久化：状态文件，不是 patch 文件
+
+开关写入 `capability-menu-policy.json`（**version 3**，新增 `guard` 段；能读 v1/v2）。**关键**：dsh 会监视 patch 文件并在每次写入后重新应用插件，若把开关存进 patch，每拨一次开关就会重载一次插件。已有测试覆盖「v2 文件缺 guard 段读作未设置」与「非布尔值拒绝而非强转」。
+
+### 即时生效
+
+Guard 每次调用经 `ctx.capabilityPolicy.getGuard()` 读实时值，所以拨动开关**无需重启**即生效。`tests/guard.spec.ts` 有端到端用例：关掉总闸后同一批调用不再被拒绝；关掉无进展保护后仍提醒但从不拒绝。
+
+### 接线链路
+
+`policy.getGuard/updateGuard` → Typert Remote（`src/server/remote.ts`）→ host-face `METHODS` → client descriptors → `GuardContainer`。
+
+总览现在读取真实的 Guard 开关、usage 快照与 `classifyAll` 分层统计，数字不再是占位值。
+
+### 失败处理
+
+- 读取失败：开关显示**不可用**，不是「关闭」——未知状态不伪装成选择。
+- 写入失败：**回滚**到先前值并显示原因。
+
+### 验证（2026-11-06 18:14 亲自复跑）
+
+- `tsc`（Node + Client）均 EXIT=0
+- `vitest run`：31 个文件 / **559 项**全部通过（v0.1.10 是 546 项，本轮新增 13 项）
+- `pnpm build` 通过；`npm pack` 111 files
+- 安装产物：实体目录（无 `src/`、无 `docs/`）、全部 `lib/**/*.js` 通过 `node --check`、`lib/client.js` 与 `lib/server/remote.js` 的 SHA256 与本地构建**逐字节一致**
 
 ## 一、本轮完成（五项）
 
@@ -86,16 +126,17 @@ v0.1.10 已提交、已推送、已发布 Release（含 tarball 附件）；本�
 
 1. **Host 未重启，新 UI 尚未生效。** Host 于 1:52 启动，而安装产物构建于 2:39。GUI 里现在看到的仍是旧两页签。重启 DSH 后才会看到四页签。
 2. **未做真实 GUI 视觉回归。** 四页签切换、思考限制开关、总览真实数据、深色主题，均未在真实 Host GUI 中确认。
-3. **思考限制的开关目前是只读呈现。** `GuardPanel` 的 `onToggle`/`onReset` 尚未接到 Remote：Guard 配置目前只来自 patch 文件，没有读写它的 Remote 方法。要真正可改，需要新增一个 Guard 配置 Remote（读写 patch 或独立状态文件）。**这是本轮明确未做的功能，不是 bug。**
-4. **总览的 Guard 状态未接真实配置**，`guardEnabled`/`duplicateThresholds`/`tiers` 目前未传入，因此显示 `—`。等第 3 项的 Remote 落地后再接。
+3. ~~思考限制的开关只读~~ — **已在 v0.1.11 完成**：三个开关真实可读写、持久化到状态文件、拨动即生效。
+
+4. ~~总览的 Guard 状态未接真实配置~~ — **已在 v0.1.11 完成**：总览读取真实 `getGuard()`、usage 快照与 `classifyAll()` 分层统计。
 5. 未验证：`resume`/preset 作用域下 `agent/created` 时序、PTC(`run_code`) 组合、并发多个 `meta_invoke`、与第三方 restrict 叠加、0.2.1-rc.3 回退路径。
 6. `meta_invoke` 单次转发不再经过所选 executor 的调度器（并发分类、`maxParallelToolCalls`），单次转发无影响但语义不完全等价。
 
 ## 三、下一轮可执行项
 
 1. **重启 DSH 验证四页签 UI** — 打开 设置 → 插件，确认顺序为 总览 / 思考限制 / 能力目录 / 调用统计，四页均可切换，深浅色可读。成本 3 分钟。这是唯一未闭环的验收项。
-2. **给思考限制接真实读写** — 新增 Guard 配置 Remote（`getGuardConfig` / `updateGuardConfig`），把 `GuardPanel` 的开关与总览的 Guard 状态接上。成本 1–2 小时。做完后思考限制页才真正可操作。
-3. **总览接入 Guard 与策略统计** — 依赖第 2 项，接 `guardEnabled`、`duplicateThresholds`、`tiers`。成本 30 分钟。
+2. ~~给思考限制接真实读写~~ — **已在 v0.1.11 完成**（见「零、v0.1.11 变更」）。
+3. ~~总览接入 Guard 与策略统计~~ — **已在 v0.1.11 完成**。
 4. **UI 预览稿同步** — `docs/design/preview/index.html` 已按同一套改动更新（56 项断言通过），但与真实页仍有差异（真实页无「未完成/失败率」列）。成本 10 分钟，可选。
 5. **清理 `lib/` 与 node_modules 之外残留** — 仓库内 `dsh-agent-efficiency-guard-0.1.10.tgz` 是发布产物，`.gitignore` 已忽略，确认无需保留后可删。成本 1 分钟。
 
