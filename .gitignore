@@ -43,3 +43,6 @@ logs/
 *.swp
 *.swo
 .cm.txt
+
+# Project-layer docs placed under the source dir by the workspace layout
+05_变更与风险/
