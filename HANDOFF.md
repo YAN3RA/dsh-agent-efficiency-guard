@@ -1,6 +1,6 @@
 # HANDOFF
 
-更新：2026-11-06 19:15。仓库：`YAN3RA/dsh-agent-efficiency-guard`；分支：`main`；已发布 **v0.1.12**。
+更新：2026-11-06 20:15。仓库：`YAN3RA/dsh-agent-efficiency-guard`；分支：`main`；已发布 **v0.1.13**。
 
 ## 当前状态（一句话）
 
@@ -157,6 +157,49 @@ Guard 每次调用经 `ctx.capabilityPolicy.getGuard()` 读实时值，所以拨
 3. ~~总览接入 Guard 与策略统计~~ — **已在 v0.1.11 完成**。
 4. **UI 预览稿同步** — `docs/design/preview/index.html` 已按同一套改动更新（56 项断言通过），但与真实页仍有差异（真实页无「未完成/失败率」列）。成本 10 分钟，可选。
 5. **清理 `lib/` 与 node_modules 之外残留** — 仓库内 `dsh-agent-efficiency-guard-0.1.10.tgz` 是发布产物，`.gitignore` 已忽略，确认无需保留后可删。成本 1 分钟。
+
+## 三点四、v0.1.13 变更
+
+### 1. 原生工具调用此前一律归为「未知来源」（真 bug，已修）
+
+`src/usage/usage-runtime.ts` 的 `createClassifier()` 只从 capability 记录里取了 MCP server，
+**从未填充 `nativeToolIds`**，于是每次原生工具调用都落到 `owner-not-verified`，
+页面报「未知来源」——尽管目录里明明有 `built-in` 记录。
+
+修复：记录落在 `built-in` 伪服务器即判定为原生工具，并缓存结果。
+回归测试 `tests/usage-runtime.spec.ts` 覆盖多个原生工具 + 一个 MCP 工具。
+**注意**：该文件里原有一条断言明确期望 `bash` 归为 `unknown`，已改为 `native`。
+
+### 2. 发布流程：附件名带内容哈希（已固化）
+
+`scripts/release.mjs`：构建 → 打包 → 按 tarball SHA-256 前 8 位重命名 → 打印附件名与上传命令。
+v0.1.13 自身就是用这个脚本发的（`dsh-agent-efficiency-guard-0.1.13-2a6cdcae.tgz`）。
+
+### 3. 一键安装（不用 npm）
+
+- `README.md`：三种安装方式，首选「把一句话粘贴给 DSH 对话」。
+- `scripts/install.ps1`：取最新 Release → 改 profile 依赖 → `pnpm install` → 报告实际版本。
+  幂等；支持 `-Version` / `-Profile` / `-DryRun` / `-Proxy`。
+- `docs/install.md`：安装 / 升级 / 卸载 / 排错全流程。
+
+**注意仓库根就是 `plugin/`**，raw URL 是
+`https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/scripts/install.ps1`
+（没有 `plugin/` 前缀——曾写错并已修正，两个 URL 均已验证 200）。
+
+### 4. 「196 个工具全按需」的成因与恢复工具
+
+成因：`policy.ts` 的 `replayMoves()` 会把状态文件里每条记录**叠加在 patch 规则之上**。
+UI 批量把工具设为按需后，patch 里 7 项常驻有 6 项被覆盖（`bash` 幸存）。
+
+恢复：`scripts/restore-resident-tiers.mjs`，默认 `--dry-run` 只报告。
+**这是用户策略数据，未经确认不要自动执行。**
+
+### 验证
+
+- `tsc`（Node + Client）均 0 错误
+- `vitest run`：31 个文件 / **563 项**通过（v0.1.12 是 562）
+- `pnpm build` 通过；`install.ps1` 已用真实 Release 端到端跑通（0.1.12 → 0.1.13）
+- 安装产物：实体包、`lib/**/*.js` 全部 `node --check` 通过、`lib/client.js` 哈希与本地一致
 
 ## 三点五、安装缓存坑（本轮踩到，务必记住）
 
