@@ -393,7 +393,11 @@ describe('meta-registry', () => {
 
   it('enumerates agent-preset scopes for tools as well as skills', async () => {
     const home = await import('node:fs/promises').then(fs => fs.mkdtemp(pathJoin(tmpdir(), 'dsh-registry-')))
-    const ctx = await setup(home)
+    // A zero debounce makes the mount-time eager refresh run on the next tick
+    // instead of 200ms later. The wait below therefore waits for a *scheduled*
+    // refresh rather than racing a fixed sleep, which used to leak a third
+    // preset request whenever the default 200ms timer outlived the 10ms sleep.
+    const ctx = await setup(home, { refreshDebounceMs: 0 })
     registerNativeTool(ctx, 'bash', 'Run commands in a bash shell')
 
     // Both the tool pass (rebuildTools) and the skill pass (refreshSkills)
@@ -415,7 +419,9 @@ describe('meta-registry', () => {
     }
     ctx.provide('agentPresets', agentPresets)
     // Let the mount-time eager tool/skill refresh settle against the empty list.
-    await new Promise(resolve => setTimeout(resolve, 10))
+    // Flush explicitly so the count below never includes a late mount-time pass.
+    await ctx.capability.refresh()
+    requested.clear()
     presets = [{ id: 'coding-plus' }]
     await ctx.capability.refresh()
 

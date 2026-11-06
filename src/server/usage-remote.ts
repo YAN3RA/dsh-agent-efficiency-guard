@@ -333,7 +333,21 @@ function projectStats(value: unknown): UsageSnapshotStats | undefined {
     || duplicates === undefined || invalid === undefined || dropped === undefined
     || batches === undefined || reasons === undefined
   ) return undefined
-  return { received, delivered, accepted, duplicates, invalid, dropped, batches, reasons }
+  const backfillReasons = projectCounts(readField(value, 'backfillReasons'))
+  return {
+    received,
+    delivered,
+    accepted,
+    duplicates,
+    invalid,
+    dropped,
+    batches,
+    reasons,
+    // Optional: a Host that reports no history counters (or reports a shape that
+    // is not a counter map) leaves the field absent rather than failing the
+    // whole stats object — the live counters are still worth showing.
+    ...(backfillReasons === undefined ? {} : { backfillReasons }),
+  }
 }
 
 /**

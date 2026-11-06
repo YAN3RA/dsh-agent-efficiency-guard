@@ -95,15 +95,25 @@ export interface UsageBackfillLimits {
  * at `unknown` forever. Coverage only becomes `complete` when a session is read
  * end to end, so a window that never fits a session is the same as no backfill.
  *
+ * A later 64-session / 30s window hit the same wall from the other side: this
+ * machine has 84 sessions across 10 workspaces, so `pending.slice(0, 64)` always
+ * left 20 sessions unvisited and `truncated` was set on every run, which keeps
+ * the page at `partial` forever. 200 sessions (about 2.4x the 84) leaves room for
+ * the profile to grow, and 120s is the wall clock a first full pass over that
+ * history needs. `maxTotalEvents` is also lifted to 400_000: 200 sessions x the
+ * 20_000 per-session cap is 4_000_000, so a 200_000 total would have become the
+ * next bottleneck at ~10_000 events per session, and real logs are commonly that
+ * large.
+ *
  * The budget is still bounded and still has a wall-clock cap: this raises the
  * ceiling, it does not remove the limit. Callers may override every field.
  */
 export const DEFAULT_USAGE_BACKFILL_LIMITS: UsageBackfillLimits = Object.freeze({
-  maxSessions: 64,
+  maxSessions: 200,
   maxEventsPerSession: 20_000,
-  maxTotalEvents: 200_000,
+  maxTotalEvents: 400_000,
   pageSize: 100,
-  maxRuntimeMs: 30_000,
+  maxRuntimeMs: 120_000,
 })
 
 /** One metadata-only checkpoint. It deliberately holds no event data. */

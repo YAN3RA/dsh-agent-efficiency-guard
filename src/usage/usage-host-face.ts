@@ -167,6 +167,15 @@ export interface UsageSnapshotStats {
   readonly dropped: number
   readonly batches: number
   readonly reasons: Readonly<Record<string, number>>
+  /**
+   * History-only reason codes, kept apart from live collector `reasons`.
+   *
+   * Optional on the wire so older snapshots and Hosts stay readable; it is
+   * absent, not zeroed, when the Host does not report one. Without it the
+   * backfill was flying blind: `truncated` / `timedOut` were only observable in
+   * the Host's own memory, never in the panel.
+   */
+  readonly backfillReasons?: Readonly<Record<string, number>>
 }
 
 /** A readable snapshot. */

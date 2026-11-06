@@ -485,3 +485,69 @@ describe('usage gateway · client/server schema parity', () => {
     expect(first.report.aggregates[0]).not.toBe((input.report as UnknownRecord).aggregates[0])
   })
 })
+
+describe('usage gateway · backfill diagnostics projection', () => {
+  it('projects the history-only reason counters', () => {
+    const input = snapshot({
+      stats: {
+        received: 10, delivered: 10, accepted: 9, duplicates: 1,
+        invalid: 0, dropped: 0, batches: 3,
+        reasons: { 'sequence-gap': 2 },
+        backfillReasons: { budget: 20, timeout: 1 },
+      },
+    })
+    const result = projectUsageSnapshot(input) as Extract<UsageSnapshot, { available: true }>
+    // The whole point of the field: the panel can finally see `budget` /
+    // `timeout` instead of the backfill running blind.
+    expect(result.stats.backfillReasons).toEqual({ budget: 20, timeout: 1 })
+    // It stays separate from the live collector reasons.
+    expect(result.stats.reasons).toEqual({ 'sequence-gap': 2 })
+  })
+
+  it('accepts a Map like the other counter maps', () => {
+    const input = snapshot({
+      stats: {
+        received: 1, delivered: 1, accepted: 1, duplicates: 0,
+        invalid: 0, dropped: 0, batches: 1, reasons: {},
+        backfillReasons: new Map([['cancelled', 3]]),
+      },
+    })
+    const result = projectUsageSnapshot(input) as Extract<UsageSnapshot, { available: true }>
+    expect(result.stats.backfillReasons).toEqual({ cancelled: 3 })
+    expect(JSON.parse(JSON.stringify(result))).toEqual(result)
+  })
+
+  it('leaves the field absent without failing the whole stats', () => {
+    // Absent is meaningful (an older Host), so it must not be zero-filled, and
+    // it must never take the live counters down with it.
+    const result = projectUsageSnapshot(snapshot()) as Extract<UsageSnapshot, { available: true }>
+    expect(result.available).toBe(true)
+    expect(result.stats.received).toBe(10)
+    expect('backfillReasons' in result.stats).toBe(false)
+  })
+
+  it('drops the field when the value is not a counter map', () => {
+    const input = snapshot({
+      stats: {
+        received: 10, delivered: 10, accepted: 9, duplicates: 1,
+        invalid: 0, dropped: 0, batches: 3, reasons: {},
+        backfillReasons: 'nope',
+      },
+    })
+    const result = projectUsageSnapshot(input) as Extract<UsageSnapshot, { available: true }>
+    expect(result.available).toBe(true)
+    expect('backfillReasons' in result.stats).toBe(false)
+  })
+
+  it('keeps only bounded, non-negative integer entries', () => {
+    const input = snapshot({
+      stats: {
+        received: 10, delivered: 10, accepted: 9, duplicates: 1,
+        invalid: 0, dropped: 0, batches: 3, reasons: {},
+        backfillReasons: { budget: 20, negative: -1, fractional: 1.5, text: 'x', empty: '' },
+      },
+    })
+    const result = projectUsageSnapshot(input) as Extract<UsageSnapshot, { available: true }>
+    expect(result.stats.backfillReasons).toEqual({ budget: 20 })
+  })
+})

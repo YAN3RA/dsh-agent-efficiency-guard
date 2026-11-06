@@ -90,6 +90,37 @@ export interface Config {
   stateFile?: string
   /** Milliseconds to coalesce tier changes before persisting them. */
   persistDebounceMs?: number
+  /**
+   * Clock the persistence debounce runs on. Defaults to {@link systemTimer}
+   * (the real timers), so a plugin mounted from a patch file never changes
+   * behaviour; inject one to drive the debounce from a fake clock.
+   */
+  timer?: PolicyTimer
+}
+
+/**
+ * The scheduling primitive the persistence debounce runs on.
+ *
+ * Production always uses {@link systemTimer}, i.e. the real `setTimeout` /
+ * `clearTimeout`, so behaviour is unchanged. A host may inject a different
+ * scheduler (a test clock, an instrumented one) to observe or drive the
+ * debounce deterministically instead of waiting on wall-clock time.
+ */
+export interface PolicyTimer {
+  /** Run `callback` after `ms` milliseconds; returns the handle passed to {@link clear}. */
+  set(callback: () => void, ms: number): unknown
+  /** Cancel a handle previously returned by {@link set}. */
+  clear(handle: unknown): void
+}
+
+/** The default timer: Node's own `setTimeout` / `clearTimeout`. */
+export const systemTimer: PolicyTimer = {
+  set(callback, ms) {
+    return setTimeout(callback, ms)
+  },
+  clear(handle) {
+    clearTimeout(handle as ReturnType<typeof setTimeout>)
+  },
 }
 
 /** Validate and default the policy configuration. */
@@ -114,6 +145,10 @@ export const Config: z<Config> = z.object({
    * A burst of clicks produces one atomic write.
    */
   persistDebounceMs: z.number().default(1500),
+  // Not a patch-file setting: production always takes the default
+  // (`systemTimer`). Declared here only so an injected clock survives the
+  // schema pass instead of being stripped before `apply` sees it.
+  timer: z.any(),
 })
 
 export const DEFAULT_META_TOOLS = ['meta_search', 'meta_invoke'] as const
@@ -323,6 +358,17 @@ export interface CapabilityPolicyService {
   getConfig(): Config
   /** Replace a subset of the policy config and recompile rules immediately. */
   updateConfig(partial: Partial<Config>): Promise<void>
+  /**
+   * Write any pending tier moves to the state file now, without waiting for the
+   * debounce window, and resolve once that write has landed.
+   *
+   * `updateConfig` returns as soon as the move is applied in memory; the disk
+   * write is coalesced behind `persistDebounceMs`. This is the explicit "commit
+   * it now" step for callers that must not return before durability — tests,
+   * and any host that wants the same guarantee. It is a no-op when nothing is
+   * pending. Teardown already flushes on its own.
+   */
+  flushPersistence(): Promise<void>
 
   // — Guard switches (思考限制) —
   /**
@@ -485,7 +531,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
 
   /** UI tier moves are kept outside the watched patch while patch rules remain the base. */
   const persistDebounceMs = config.persistDebounceMs ?? 1500
-  let persistTimer: ReturnType<typeof setTimeout> | undefined
+  const persistClock = config.timer ?? systemTimer
+  let persistTimer: unknown
 
   /**
    * Tier moves this instance made, per capability kind: id → the class the
@@ -575,8 +622,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
 
   const schedulePersistTiers = (): void => {
     if (stateFile.length === 0) return
-    if (persistTimer !== undefined) clearTimeout(persistTimer)
-    persistTimer = setTimeout(() => {
+    if (persistTimer !== undefined) persistClock.clear(persistTimer)
+    persistTimer = persistClock.set(() => {
       persistTimer = undefined
       void persistTiers()
     }, persistDebounceMs)
@@ -586,7 +633,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   // reloads the plugin. Cordis awaits the disposer before mounting its successor.
   ctx.effect(() => async () => {
     if (persistTimer !== undefined) {
-      clearTimeout(persistTimer)
+      persistClock.clear(persistTimer)
       persistTimer = undefined
       await persistTiers()
     } else await persistInFlight
@@ -705,6 +752,17 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       // so every live agent gets its previous restriction disposed and the new
       // deny list applied before its next assembly.
       reapplyOnDemandRestrictions()
+    },
+
+    flushPersistence(): Promise<void> {
+      // Drop the pending window so a later teardown cannot write the same moves
+      // twice, then join the serialized write queue: awaiting it covers both
+      // writes already in flight and the one just queued.
+      if (persistTimer !== undefined) {
+        persistClock.clear(persistTimer)
+        persistTimer = undefined
+      }
+      return persistTiers()
     },
 
     // — Guard switches (思考限制) —

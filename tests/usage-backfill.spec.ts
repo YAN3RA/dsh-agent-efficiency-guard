@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
+  DEFAULT_USAGE_BACKFILL_LIMITS,
   runUsageBackfill,
   type UsageBackfillCursor,
   type UsageBackfillOptions,
@@ -691,5 +692,38 @@ describe('runUsageBackfill', () => {
     const state = createUsageCollectorState()
     const result = await runUsageBackfill({ context: contextFor(undefined), classify, state })
     expect(result.state).toBe(state)
+  })
+})
+
+describe('usage backfill · default budget', () => {
+  // The page can only reach `complete` once every pending Session fits in one
+  // window. The shipped defaults used to be 64 sessions, which truncated this
+  // machine's 84 sessions on every run and pinned the page at `partial`.
+  const SESSIONS_ON_THIS_MACHINE = 84
+
+  it('covers a real profile without truncating', () => {
+    expect(DEFAULT_USAGE_BACKFILL_LIMITS.maxSessions).toBeGreaterThan(SESSIONS_ON_THIS_MACHINE)
+  })
+
+  it('stays bounded rather than unbounded', () => {
+    // Raising the ceiling must never mean removing it.
+    for (const value of [
+      DEFAULT_USAGE_BACKFILL_LIMITS.maxSessions,
+      DEFAULT_USAGE_BACKFILL_LIMITS.maxEventsPerSession,
+      DEFAULT_USAGE_BACKFILL_LIMITS.maxTotalEvents,
+      DEFAULT_USAGE_BACKFILL_LIMITS.pageSize,
+      DEFAULT_USAGE_BACKFILL_LIMITS.maxRuntimeMs,
+    ]) {
+      expect(Number.isSafeInteger(value)).toBe(true)
+      expect(Number.isFinite(value)).toBe(true)
+      expect(value).toBeGreaterThan(0)
+    }
+  })
+
+  it('does not let the total event budget undercut the Session window', () => {
+    // `maxTotalEvents` must not become the next bottleneck: a window that can
+    // hold `maxSessions` Sessions is useless if the event cap stops it first.
+    expect(DEFAULT_USAGE_BACKFILL_LIMITS.maxTotalEvents)
+      .toBeGreaterThanOrEqual(DEFAULT_USAGE_BACKFILL_LIMITS.maxSessions * 1_000)
   })
 })

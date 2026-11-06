@@ -11,6 +11,43 @@ import * as policy from '../src/policy.ts'
 import { readTierState } from '../src/policy-state.ts'
 import { mountTestExecutor } from './stubs/test-executor.ts'
 
+/**
+ * A manual {@link policy.PolicyTimer} for tests.
+ *
+ * The 50ms persistence debounce is a real timer in production, and nothing on
+ * the state file flips when it is merely *scheduled*: polling for the file can
+ * therefore only distinguish "already written" from "not yet written", and a
+ * slow CI box lands the timer after the last poll. This clock removes the
+ * timing question entirely — `fire()` runs exactly the callbacks that are
+ * pending, so a test drives the debounce instead of racing it.
+ */
+class ManualClock implements policy.PolicyTimer {
+  private readonly pending = new Map<number, { callback: () => void; ms: number }>()
+  private lastId = 0
+
+  set(callback: () => void, ms: number): unknown {
+    this.lastId += 1
+    this.pending.set(this.lastId, { callback, ms })
+    return this.lastId
+  }
+
+  clear(handle: unknown): void {
+    this.pending.delete(handle as number)
+  }
+
+  /** Milliseconds of every callback still waiting to fire. */
+  delays(): number[] {
+    return [...this.pending.values()].map(entry => entry.ms)
+  }
+
+  /** Cancel nothing, skip the wait: run every pending callback once. */
+  fire(): void {
+    const due = [...this.pending.entries()]
+    this.pending.clear()
+    for (const [, entry] of due) entry.callback()
+  }
+}
+
 async function setup(config: policy.Config = {}, registryConfig: registry.Config = {}): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
@@ -515,15 +552,25 @@ describe('capability-policy persistence (tier writes)', () => {
     const patch = '- insert: []\n'
     await fs.writeFile(patchFile, patch, 'utf8')
 
-    const ctx = await setup({ patchFile, persistDebounceMs: 50 })
+    const clock = new ManualClock()
+    const ctx = await setup({ patchFile, persistDebounceMs: 50, timer: clock })
     await ctx.capabilityPolicy.updateConfig({ skills: { 'on-demand': ['accepted-skill'] } })
     await expect(ctx.capabilityPolicy.updateConfig({ tools: { disabled: ['meta_search'] } }))
       .rejects.toThrow(/meta tool "meta_search" cannot be disabled/)
 
-    await expect.poll(async () => {
-      return (await readTierState(stateFile)).skill.get('accepted-skill')
-    }, { timeout: 5_000 }).toBe('on-demand')
-    expect((await readTierState(stateFile)).tool.has('meta_search')).toBe(false)
+    // Only one debounce window is pending: the rejected move must never have
+    // entered the journal, so the valid move is all that is scheduled.
+    expect(clock.delays()).toEqual([50])
+
+    // Drive the debounce instead of racing it, then wait for the write it
+    // triggers to settle on disk.
+    const flushed = ctx.capabilityPolicy.flushPersistence()
+    clock.fire()
+    await flushed
+
+    const saved = await readTierState(stateFile)
+    expect(saved.skill.get('accepted-skill')).toBe('on-demand')
+    expect(saved.tool.has('meta_search')).toBe(false)
     expect(await fs.readFile(patchFile, 'utf8')).toBe(patch)
   })
 
@@ -536,6 +583,7 @@ describe('capability-policy persistence (tier writes)', () => {
     const patch = '- insert: []\n'
     await fs.writeFile(patchFile, patch, 'utf8')
 
+    const clock = new ManualClock()
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
@@ -545,6 +593,7 @@ describe('capability-policy persistence (tier writes)', () => {
     await ctx.plugin(policy, {
       patchFile,
       persistDebounceMs: 50,
+      timer: clock,
       tools: { resident: ['mcp__km__search'] },
     })
 
@@ -552,14 +601,21 @@ describe('capability-policy persistence (tier writes)', () => {
     await ctx.capability.refresh()
 
     await ctx.capabilityPolicy.updateConfig({ tools: { 'on-demand': ['mcp__km__search'] } })
-    await expect.poll(async () => {
-      return (await readTierState(stateFile)).tool.get('mcp__km__search')
-    }, { timeout: 5_000 }).toBe('on-demand')
+    // Still pending: nothing reaches the state file until the debounce fires.
+    expect(clock.delays()).toEqual([50])
+    expect((await readTierState(stateFile)).tool.size).toBe(0)
+    const firstFlush = ctx.capabilityPolicy.flushPersistence()
+    clock.fire()
+    await firstFlush
+    expect((await readTierState(stateFile)).tool.get('mcp__km__search')).toBe('on-demand')
 
+    // A second move coalesces into its own window and overwrites the first.
     await ctx.capabilityPolicy.updateConfig({ tools: { disabled: ['mcp__km__search'] } })
-    await expect.poll(async () => {
-      return (await readTierState(stateFile)).tool.get('mcp__km__search')
-    }, { timeout: 5_000 }).toBe('disabled')
+    expect(clock.delays()).toEqual([50])
+    const secondFlush = ctx.capabilityPolicy.flushPersistence()
+    clock.fire()
+    await secondFlush
+    expect((await readTierState(stateFile)).tool.get('mcp__km__search')).toBe('disabled')
     expect(await fs.readFile(patchFile, 'utf8')).toBe(patch)
     const restored = await setup({ patchFile, tools: { resident: ['mcp__km__search'] } })
     expect(restored.capabilityPolicy.classifyTool('mcp__km__search')).toBe('disabled')
@@ -575,6 +631,7 @@ describe('capability-policy persistence (tier writes)', () => {
     const patch = '- insert: []\n'
     await fs.writeFile(patchFile, patch, 'utf8')
 
+    const clock = new ManualClock()
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
@@ -584,19 +641,24 @@ describe('capability-policy persistence (tier writes)', () => {
     await ctx.plugin(policy, {
       patchFile,
       persistDebounceMs: 50,
+      timer: clock,
       skills: { resident: ['stale'], 'on-demand': ['moved'] },
     })
 
+    // The other writer's edit lands before the debounce fires, which is exactly
+    // the interleaving the merge has to survive. Driving the clock makes that
+    // order a fact instead of a race: the write cannot have happened yet.
     await fs.writeFile(stateFile, JSON.stringify({ version: 1, tools: {}, skills: { sneaky: 'on-demand' } }), 'utf8')
     await ctx.capabilityPolicy.updateConfig({ skills: { resident: ['stale', 'moved'] } })
-    // Poll rather than assume the debounce already fired. The write is scheduled
-    // on a 50ms timer, and under parallel test load that timer can land after a
-    // single synchronous read; the poll waits for the observable effect instead
-    // of guessing how long the scheduler needs.
-    await expect.poll(async () => {
-      return (await readTierState(stateFile)).skill.get('moved')
-    }, { timeout: 10_000, interval: 25 }).toBe('resident')
-    expect((await readTierState(stateFile)).skill.get('sneaky')).toBe('on-demand')
+    expect(clock.delays()).toEqual([50])
+
+    const flushed = ctx.capabilityPolicy.flushPersistence()
+    clock.fire()
+    await flushed
+
+    const saved = await readTierState(stateFile)
+    expect(saved.skill.get('moved')).toBe('resident')
+    expect(saved.skill.get('sneaky')).toBe('on-demand')
     expect(await fs.readFile(patchFile, 'utf8')).toBe(patch)
   })
 
@@ -616,15 +678,19 @@ describe('capability-policy persistence (tier writes)', () => {
     mountTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(registry, { stateFile: '' })
-    // Keep the write pending until teardown.
+    // Keep the write pending until teardown: the clock never fires, so only the
+    // disposer can flush it.
+    const clock = new ManualClock()
     const fiber = await ctx.plugin(policy, {
       patchFile,
       persistDebounceMs: 60_000,
+      timer: clock,
       skills: { resident: ['stale'], 'on-demand': ['moved'] },
     })
 
     await ctx.capabilityPolicy.updateConfig({ skills: { resident: ['stale', 'moved'] } })
     await fs.writeFile(stateFile, JSON.stringify({ version: 1, tools: {}, skills: { sneaky: 'on-demand' } }), 'utf8')
+    expect(clock.delays()).toEqual([60_000])
 
     await fiber.dispose()
 
