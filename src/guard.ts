@@ -44,6 +44,10 @@ export interface Config {
   /** @deprecated Accepted for migration only; hard steps never stop a turn. */
   stepLimitMode?: 'warn-only' | 'hard-stop'
   duplicateDetection?: boolean
+  /** Alternating-cycle detection (A -> B -> A -> B). Defaults to on. */
+  alternatingCycleDetection?: boolean
+  /** No-progress protection: may locally deny a repeated call. Defaults to on. */
+  noProgressProtection?: boolean
   /** @deprecated Accepted for config migration only; N7 uses fixed 3/5/8 thresholds. */
   duplicateWarnAfter?: number
   duplicateHardBlock?: boolean
@@ -71,6 +75,8 @@ export const Config: z<Config> = z.object({
   profile: z.union(['quick', 'normal', 'deep']).default('normal'),
   stepLimitMode: z.union(['warn-only', 'hard-stop']).default('warn-only'),
   duplicateDetection: z.boolean().default(true),
+  alternatingCycleDetection: z.boolean().default(true),
+  noProgressProtection: z.boolean().default(true),
   duplicateWarnAfter: z.number().default(2),
   duplicateHardBlock: z.boolean().default(false),
   excludedTools: z.array(z.string()).default([]),
@@ -188,7 +194,12 @@ function handleLoopObservation(
   state.loopState = loopObserved.state
   const decision = loopObserved.decision
   const signature = decision.signature
-  if (signature !== undefined && decision.blockCandidate) rememberBlockCandidate(state, signature)
+  // No-progress protection is the evidence gate for the LOCAL denial. With it off
+  // the call is still reminded about (below), but never becomes blockable, so the
+  // switch in the settings page changes behaviour instead of being cosmetic.
+  if (signature !== undefined && decision.blockCandidate && options.noProgressProtection !== false) {
+    rememberBlockCandidate(state, signature)
+  }
   if (signature === undefined || decision.warning === 'none') return
 
   const warningKey = `${signature}:${decision.warning}:${decision.repeatThreshold ?? LOOP_HISTORY_LIMIT}`
@@ -205,12 +216,14 @@ function createLoopOptions(
   excludedTools: ReadonlySet<string>,
   pollingTools: ReadonlySet<string>,
   warnOnlyTools: ReadonlySet<string>,
+  alternatingCycleEnabled: boolean,
 ): GuardLoopOptions {
   return {
     repeatThresholds: DEFAULT_REPEAT_THRESHOLDS,
     excludedTools: new Set([...excludedTools, ...ctx.capabilityPolicy.metaTools(), ...RESERVED_TRANSPORT_TOOLS]),
     pollingTools,
     warnOnlyTools,
+    alternatingCycleEnabled,
   }
 }
 function toGuardConfig(config: Config): Partial<GuardConfig> {
@@ -219,10 +232,32 @@ function toGuardConfig(config: Config): Partial<GuardConfig> {
     profile: config.profile,
     stepLimitMode: config.stepLimitMode,
     duplicateDetection: config.duplicateDetection,
+    alternatingCycleDetection: config.alternatingCycleDetection,
+    noProgressProtection: config.noProgressProtection,
     duplicateWarnAfter: config.duplicateWarnAfter,
     duplicateHardBlock: config.duplicateHardBlock,
     profiles: config.profiles === undefined ? undefined : { ...DEFAULT_GUARD_PROFILES, ...config.profiles },
     hostIntegration: config.hostIntegration === undefined ? undefined : { ...DEFAULT_HOST_INTEGRATION, ...config.hostIntegration },
+  }
+}
+
+/**
+ * Live Guard switches, with the settings page taking precedence.
+ *
+ * The page writes through `ctx.capabilityPolicy.updateGuard`, which persists and
+ * updates the service immediately, so a toggle takes effect on the next tool call
+ * without reloading the plugin. The patch-file config stays the base for a
+ * deployment that never opens the page.
+ */
+function readSwitches(ctx: Context, config: Config): Required<Pick<Config,
+  'enabled' | 'duplicateDetection' | 'alternatingCycleDetection' | 'noProgressProtection'>> {
+  const live = ctx.get('capabilityPolicy')?.getGuard()
+  return {
+    enabled: live?.enabled ?? config.enabled ?? true,
+    duplicateDetection: live?.duplicateDetection ?? config.duplicateDetection ?? true,
+    alternatingCycleDetection:
+      live?.alternatingCycleDetection ?? config.alternatingCycleDetection ?? true,
+    noProgressProtection: live?.noProgressProtection ?? config.noProgressProtection ?? true,
   }
 }
 
@@ -243,11 +278,16 @@ export function apply(ctx: Context, config: Config = {}): void {
   const excludedTools = new Set(config.excludedTools ?? [])
   const pollingTools = new Set([...DEFAULT_POLLING_TOOLS, ...(config.pollingTools ?? [])])
   const warnOnlyTools = new Set([...DEFAULT_WARN_ONLY_TOOLS, ...(config.warnOnlyTools ?? [])])
-  const loopOptions = () => createLoopOptions(ctx, excludedTools, pollingTools, warnOnlyTools)
+  const switches = (): ReturnType<typeof readSwitches> => readSwitches(ctx, config)
+  const loopOptions = (): GuardLoopOptions => ({
+    ...createLoopOptions(ctx, excludedTools, pollingTools, warnOnlyTools, switches().alternatingCycleDetection),
+    noProgressProtection: switches().noProgressProtection,
+  })
 
   const toolGuard = ctx.tools.guard((execution) => {
     const agent = execution.agent
-    if (!guard.config.enabled || !guard.config.duplicateDetection || agent === undefined
+    const sw = switches()
+    if (!sw.enabled || !sw.duplicateDetection || agent === undefined
       || isControlPlaneTool(ctx.capabilityPolicy, execution.name)
       || excludedTools.has(execution.name) || pollingTools.has(execution.name) || warnOnlyTools.has(execution.name)) return undefined
     const state = guard.states.get(agent)
@@ -277,7 +317,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   disposers.push(ctx.on('tools/execute', async (execution, next) => {
     const agent = execution.agent
-    if (!guard.config.enabled || !guard.config.duplicateDetection || agent === undefined) return next()
+    if (!switches().enabled || !switches().duplicateDetection || agent === undefined) return next()
     const state = guard.states.get(agent)
     if (state === undefined || state.loopDetectionDisabled) return next()
 
@@ -298,14 +338,14 @@ export function apply(ctx: Context, config: Config = {}): void {
   disposers.push(ctx.on('tools/result', (execution: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) => {
     const agent = execution.agent
     const state = agent === undefined ? undefined : guard.states.get(agent)
-    if (!guard.config.enabled || agent === undefined || state === undefined) return
+    if (!switches().enabled || agent === undefined || state === undefined) return
     const callId = String(execution.callId)
     if (state.deniedCallIds.delete(callId)) return
 
     const dispatch = state.dispatchRecords.get(callId)
     if (dispatch === undefined) return
     state.dispatchRecords.delete(callId)
-    if (dispatch.epoch !== state.loopEpoch || !guard.config.duplicateDetection || state.loopDetectionDisabled) return
+    if (dispatch.epoch !== state.loopEpoch || !switches().duplicateDetection || state.loopDetectionDisabled) return
 
     const outcome = outcomeFor(result)
     const evidence = result.isError

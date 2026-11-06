@@ -203,3 +203,57 @@ describe('guard loop core', () => {
     expect(DEFAULT_REPEAT_THRESHOLDS).toEqual([3, 5, 8])
   })
 })
+
+describe('Guard switch independence', () => {
+  /** Drive a strict A -> B -> A -> B sequence with unchanged fingerprints. */
+  function alternating(options: Parameters<typeof observeGuardLoop>[3]): ReturnType<typeof observeGuardLoop> {
+    let state = createGuardLoopState(1)
+    let last = observeGuardLoop(state, 1, { name: 'a', arguments: {}, outcome: 'success', resultFingerprint: 'x' }, options)
+    state = last.state
+    const plan = ['b', 'a', 'b']
+    for (const name of plan) {
+      last = observeGuardLoop(state, 1, { name, arguments: {}, outcome: 'success', resultFingerprint: 'x' }, options)
+      state = last.state
+    }
+    return last
+  }
+
+  it('reports an alternating cycle when the switch is on', () => {
+    const result = alternating({ alternatingCycleEnabled: true })
+    expect(result.decision.alternatingCycle).toBe(true)
+    expect(result.decision.warning).toBe('alternating-cycle')
+  })
+
+  it('reports no cycle when the alternating-cycle switch is off', () => {
+    const result = alternating({ alternatingCycleEnabled: false })
+    expect(result.decision.alternatingCycle).toBe(false)
+    expect(result.decision.warning).not.toBe('alternating-cycle')
+  })
+
+  it('still reminds about repeats when no-progress protection is off', () => {
+    // Three identical calls reach the first threshold, so a reminder is due; the
+    // switch only governs whether the call can become a local denial.
+    let state = createGuardLoopState(1)
+    let last = observeGuardLoop(state, 1, { name: 'r', arguments: {}, outcome: 'success', resultFingerprint: 'same' })
+    state = last.state
+    for (let i = 0; i < 2; i += 1) {
+      last = observeGuardLoop(state, 1, { name: 'r', arguments: {}, outcome: 'success', resultFingerprint: 'same' }, { noProgressProtection: false })
+      state = last.state
+    }
+    expect(last.decision.warning).toBe('repeat')
+    expect(last.decision.blockCandidate).toBe(false)
+  })
+
+  it('may deny a repeated call when no-progress protection is on', () => {
+    let state = createGuardLoopState(1)
+    let last = observeGuardLoop(state, 1, { name: 'r', arguments: {}, outcome: 'success', resultFingerprint: 'same' })
+    state = last.state
+    // 3/5/8 thresholds: reach 8 identical calls with the same fingerprint.
+    for (let i = 0; i < 7; i += 1) {
+      last = observeGuardLoop(state, 1, { name: 'r', arguments: {}, outcome: 'success', resultFingerprint: 'same' })
+      state = last.state
+    }
+    expect(last.decision.repeatCount).toBe(8)
+    expect(last.decision.blockCandidate).toBe(true)
+  })
+})

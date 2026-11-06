@@ -11,7 +11,7 @@ import type { PromptPresentation } from '@deepseek-ai/dsh-system-prompt'
 import { dirname, join } from 'node:path'
 import { escapeText } from '@deepseek-ai/dsh-skill'
 import { serverNameOf, type CapabilityKind } from './registry.ts'
-import { readTierState, writeTierState, type TierState } from './policy-state.ts'
+import { readGuardState, readTierState, writeGuardState, writeTierState, type GuardState, type TierState } from './policy-state.ts'
 import {
   LocationRegistry,
   defaultLocationConfig,
@@ -323,6 +323,21 @@ export interface CapabilityPolicyService {
   getConfig(): Config
   /** Replace a subset of the policy config and recompile rules immediately. */
   updateConfig(partial: Partial<Config>): Promise<void>
+
+  // — Guard switches (思考限制) —
+  /**
+   * Effective Guard switches: the shipped defaults with any persisted UI choice
+   * on top. Read-only for the caller; use {@link updateGuard} to change them.
+   */
+  getGuard(): GuardSwitches
+  /**
+   * Persist and apply Guard switches.
+   *
+   * Writes go to the plugin state file, never the patch file: dsh watches patch
+   * files and re-applies this plugin on every write, so a toggle stored there
+   * would reload the plugin each time a switch is flipped.
+   */
+  updateGuard(change: Partial<GuardSwitches>): Promise<void>
   /**
    * Classify every capability currently indexed by `ctx.capability` (the
    * registry sibling). Returns an empty array when the registry is not mounted.
@@ -359,6 +374,31 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     capabilityPolicy: CapabilityPolicyService
   }
+}
+
+/**
+ * The three Guard switches the settings page exposes.
+ *
+ * They are separate booleans, not one master flag, because the page presents
+ * them as independent controls; the detector honours each one.
+ */
+export interface GuardSwitches {
+  /** Master switch: off means no reminders and no denials at all. */
+  readonly enabled: boolean
+  /** Repeated identical calls: remind at the fixed 3/5/8 thresholds. */
+  readonly duplicateDetection: boolean
+  /** A -> B -> A -> B sequences: detect and explain. */
+  readonly alternatingCycleDetection: boolean
+  /** Evidence gate for the local denial of one repeated call. */
+  readonly noProgressProtection: boolean
+}
+
+/** Shipped defaults for {@link GuardSwitches}. */
+export const DEFAULT_GUARD_SWITCHES: GuardSwitches = {
+  enabled: true,
+  duplicateDetection: true,
+  alternatingCycleDetection: true,
+  noProgressProtection: true,
 }
 
 /**
@@ -425,13 +465,19 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const patchFile = (config.patchFile ?? defaults.patchFile).trim()
   const stateFile = (config.stateFile ?? (patchFile.length > 0 ? join(dirname(patchFile), 'capability-menu-policy.json') : '')).trim()
   let savedTiers: TierState = { tool: new Map(), skill: new Map() }
+  /** UI Guard switch choices; the patch config remains the base. */
+  let savedGuard: GuardState = {}
   if (stateFile.length > 0) {
     try {
       savedTiers = await readTierState(stateFile)
+      savedGuard = await readGuardState(stateFile)
     } catch (error) {
       throw new Error(`cannot load capability tier state from ${stateFile}: ${String(error)}`)
     }
   }
+
+  /** Live Guard switches: defaults, patch config, then persisted UI choices. */
+  let guardSwitches: GuardSwitches = { ...DEFAULT_GUARD_SWITCHES, ...savedGuard }
   const locations = new LocationRegistry(ctx, {
     patchFile,
     skillsDir: (config.skillsDir ?? defaults.skillsDir).trim(),
@@ -659,6 +705,31 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       // so every live agent gets its previous restriction disposed and the new
       // deny list applied before its next assembly.
       reapplyOnDemandRestrictions()
+    },
+
+    // — Guard switches (思考限制) —
+    getGuard(): GuardSwitches {
+      return guardSwitches
+    },
+    async updateGuard(change: Partial<GuardSwitches>): Promise<void> {
+      const next: Record<string, boolean> = { ...guardSwitches }
+      for (const key of ['enabled', 'duplicateDetection', 'alternatingCycleDetection', 'noProgressProtection'] as const) {
+        const value = change[key]
+        if (value === undefined) continue
+        if (typeof value !== 'boolean') throw new Error(`updateGuard: ${key} must be a boolean`)
+        next[key] = value
+      }
+      // Persist first: a disk failure must not leave the live process claiming a
+      // switch the next reload would not honour.
+      if (stateFile.length > 0) {
+        try {
+          await writeGuardState(stateFile, next)
+        } catch (error) {
+          throw new Error(`cannot persist Guard switches to ${stateFile}: ${String(error)}`)
+        }
+      }
+      guardSwitches = next as unknown as GuardSwitches
+      ctx.logger.info(`capability-policy: Guard switches updated: ${JSON.stringify(next)}`)
     },
     classifyAll(): readonly CapabilityClassification[] {
       // The registry default maxResults (20) would truncate the management

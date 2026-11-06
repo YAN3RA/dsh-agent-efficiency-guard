@@ -15,7 +15,8 @@ import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createElement, type ReactElement } from 'react'
 import { installSettingsNavIcon } from './settings-nav-icon.ts'
-import { TYPERT_REMOTE } from './remote.ts'
+import { TYPERT_REMOTE, type GuardSwitches } from './remote.ts'
+import type { GuardSwitchRemote as GuardSwitchesRemote } from './GuardContainer.tsx'
 import { USAGE_TYPERT_REMOTE } from './usage-remote.ts'
 import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import { createUsagePanelApi, type UsagePanelRemote } from './usage-adapter.ts'
@@ -555,6 +556,21 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
   // changes, and a fresh object each render would re-run its effect forever.
   const usageApi = createUsagePanelApi(usageRemote)
 
+  /**
+   * Guard switch face for 思考限制 and 总览.
+   *
+   * `getGuard`/`updateGuard`/`classifyAll` are optional on the interface: an
+   * older Host without them makes the panels degrade to read-only instead of
+   * throwing, which is what `GuardContainer` already handles.
+   */
+  const guardRemote = {
+    getGuard: () => (remote() as { getGuard(): ReturnType<NonNullable<GuardSwitchesRemote['getGuard']>> }).getGuard(),
+    updateGuard: (change: Partial<GuardSwitches>) =>
+      (remote() as { updateGuard(c: Partial<GuardSwitches>): ReturnType<NonNullable<GuardSwitchesRemote['updateGuard']>> })
+        .updateGuard(change),
+    classifyAll: () => (remote() as { classifyAll(): ReturnType<NonNullable<GuardSwitchesRemote['classifyAll']>> }).classifyAll(),
+  } satisfies GuardSwitchesRemote
+
   // One settings page for the whole plugin, split by capability category. Both
   // views keep their own Remote subscriptions; `PluginSection` owns only the
   // category tab bar and the shared chrome.
@@ -568,6 +584,9 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     inject: (): PluginSectionInjected => ({
       capability: injected(),
       usageApi,
+      // The same capability face backs both the Guard switches and the tier
+      // summary, so one remote object serves 思考限制 and 总览.
+      guardRemote,
       t: tabT,
     }),
   }, PluginSection))

@@ -28,6 +28,7 @@ import { UsagePanel, type UsagePanelApi } from '../src/client/usage.tsx'
 import { OverviewContainer } from '../src/client/OverviewContainer.tsx'
 import { OverviewPanel } from '../src/client/OverviewPanel.tsx'
 import { GuardPanel } from '../src/client/GuardPanel.tsx'
+import { GuardContainer } from '../src/client/GuardContainer.tsx'
 import type { CapabilitySectionInjected } from '../src/client/CapabilitySection.tsx'
 
 const capability = {
@@ -49,8 +50,17 @@ const labels: Record<string, string> = {
   tabUsage: '调用统计',
 }
 
+const guardRemote = {
+  getGuard: async () => ({
+    ok: true as const,
+    value: { enabled: true, duplicateDetection: true, alternatingCycleDetection: true, noProgressProtection: true },
+  }),
+  updateGuard: async () => ({ ok: true as const, value: undefined }),
+  classifyAll: async () => ({ ok: true as const, value: [] }),
+}
+
 function props(): PluginSectionProps {
-  return { capability, usageApi, t: (key: string) => labels[key] ?? key }
+  return { capability, usageApi, guardRemote, t: (key: string) => labels[key] ?? key }
 }
 
 interface TreeNode {
@@ -144,7 +154,9 @@ describe('combined settings page', () => {
     // 总览 is wired through its container so it reads the real usage snapshot;
     // the pure view is covered separately by OverviewPanel's own contract.
     expect(find(tree, element => element.type === OverviewContainer)).toBeDefined()
-    expect(find(tree, element => element.type === GuardPanel)).toBeDefined()
+    // 思考限制 is wired through its container so the switches read the real Host
+    // configuration; `GuardPanel` is covered as a pure view below.
+    expect(find(tree, element => element.type === GuardContainer)).toBeDefined()
     expect(find(tree, element => element.type === UsagePanel)).toBeDefined()
     // The capability view is a function component; assert its element exists
     // rather than reaching into its internals.

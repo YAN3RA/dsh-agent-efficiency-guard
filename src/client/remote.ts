@@ -66,6 +66,28 @@ export interface SelfUpdateStatus {
   readonly sourcePath?: string
 }
 
+/** The three Guard switches surfaced by 思考限制. */
+export interface GuardSwitches {
+  readonly enabled: boolean
+  readonly duplicateDetection: boolean
+  readonly alternatingCycleDetection: boolean
+  readonly noProgressProtection: boolean
+}
+
+const guardSwitches$schema = z.object({
+  enabled: z.boolean(),
+  duplicateDetection: z.boolean(),
+  alternatingCycleDetection: z.boolean(),
+  noProgressProtection: z.boolean(),
+})
+
+const guardSwitchesPatch$schema = z.object({
+  enabled: z.boolean().optional(),
+  duplicateDetection: z.boolean().optional(),
+  alternatingCycleDetection: z.boolean().optional(),
+  noProgressProtection: z.boolean().optional(),
+})
+
 const selfUpdateStatus$schema = z.object({
   current: z.string(),
   latest: z.string(),
@@ -389,6 +411,19 @@ export const TYPERT_REMOTE: TypertRemoteContribution = {
       ],
       result: strictCodec('void', z.undefined()),
       sourceLocation: { file: 'src/server/remote.ts', line: 67, column: 3 },
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/getGuard',
+      service: 'capabilityPolicy', namespace: 'capabilityPolicy', method: 'getGuard',
+      invocation: { kind: 'direct' }, parameters: [],
+      result: strictCodec('GuardSwitches', guardSwitches$schema),
+    },
+    {
+      id: 'dsh-agent-efficiency-guard#capabilityPolicy/updateGuard',
+      service: 'capabilityPolicy', namespace: 'capabilityPolicy', method: 'updateGuard',
+      invocation: { kind: 'direct' },
+      parameters: [{ name: 'change', wire: 'change', source: 'json', codec: strictCodec('GuardSwitchesPatch', guardSwitchesPatch$schema) }],
+      result: strictCodec('void', z.undefined()),
     },
     {
       id: 'dsh-agent-efficiency-guard#capabilityPolicy/classifyAll',

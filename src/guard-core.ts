@@ -31,6 +31,21 @@ export interface GuardConfig {
   /** @deprecated Kept for old configs; validation always resolves to warn-only. */
   readonly stepLimitMode: 'warn-only' | 'hard-stop'
   readonly duplicateDetection: boolean
+  /**
+   * Alternating-cycle detection (A -> B -> A -> B).
+   *
+   * Split out of `duplicateDetection` because the settings page exposes the three
+   * capabilities as independent switches; a single master flag would make two of
+   * them cosmetic. Off means the sequence detector reports no cycle.
+   */
+  readonly alternatingCycleDetection: boolean
+  /**
+   * No-progress protection: the evidence gate for locally denying a repeated call.
+   *
+   * Off means a repeated call may still be *reminded* about, but never denied —
+   * the detector keeps its history and the reminder path is unchanged.
+   */
+  readonly noProgressProtection: boolean
   /** @deprecated Compatibility-only; N7 uses fixed 3/5/8 thresholds. */
   readonly duplicateWarnAfter: number
   /** @deprecated Accepted for migration only; validated as false. */
@@ -126,6 +141,8 @@ export const DEFAULT_GUARD_CONFIG: GuardConfig = {
   profile: 'normal',
   stepLimitMode: 'warn-only',
   duplicateDetection: true,
+  alternatingCycleDetection: true,
+  noProgressProtection: true,
   duplicateWarnAfter: 2,
   duplicateHardBlock: false,
   profiles: DEFAULT_GUARD_PROFILES,
@@ -172,6 +189,9 @@ export function validateGuardConfig(input: Partial<GuardConfig> = {}): GuardConf
     enabled: input.enabled ?? DEFAULT_GUARD_CONFIG.enabled,
     profile: input.profile ?? DEFAULT_GUARD_CONFIG.profile,
     duplicateDetection: input.duplicateDetection ?? DEFAULT_GUARD_CONFIG.duplicateDetection,
+    alternatingCycleDetection:
+      input.alternatingCycleDetection ?? DEFAULT_GUARD_CONFIG.alternatingCycleDetection,
+    noProgressProtection: input.noProgressProtection ?? DEFAULT_GUARD_CONFIG.noProgressProtection,
     stepLimitMode: 'warn-only',
     duplicateHardBlock: false,
     profiles,

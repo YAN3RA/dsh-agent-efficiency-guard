@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import { CapabilityPolicyGateway } from '../src/server/remote.ts'
@@ -199,5 +199,28 @@ describe('server gateway · listSkillLocations', () => {
     expect(rows.map(row => row.name)).toEqual(['dir-name', 'project-skill'])
     expect(rows.find(row => row.name === 'dir-name')?.root).toBe('user')
     expect(rows.find(row => row.name === 'project-skill')?.root).toBe('project')
+  })
+})
+
+describe('server gateway · Guard switches', () => {
+  it('reads and writes through the policy service, not a local copy', async () => {
+    const ctx = new Context()
+    const switches = {
+      enabled: true, duplicateDetection: true, alternatingCycleDetection: false, noProgressProtection: true,
+    }
+    const updateGuard = vi.fn(async (change: Record<string, boolean>) => {
+      Object.assign(switches, change)
+    })
+    ctx.provide('capabilityPolicy', {
+      getGuard: () => switches,
+      updateGuard,
+    } as unknown as CapabilityPolicyService)
+
+    const gateway = new CapabilityPolicyGateway(ctx)
+    expect(gateway.getGuard().alternatingCycleDetection).toBe(false)
+
+    await gateway.updateGuard({ alternatingCycleDetection: true })
+    expect(updateGuard).toHaveBeenCalledWith({ alternatingCycleDetection: true })
+    expect(gateway.getGuard().alternatingCycleDetection).toBe(true)
   })
 })

@@ -22,7 +22,8 @@ import { SegmentedTabs, type SegmentedTab } from '@deepseek-ai/dsh-client-ui-pri
 import { CapabilitySection, type CapabilitySectionInjected } from './CapabilitySection.tsx'
 import { UsagePanel, type UsagePanelApi } from './usage.tsx'
 import { OverviewContainer } from './OverviewContainer.tsx'
-import { GuardPanel } from './GuardPanel.tsx'
+import { GuardContainer } from './GuardContainer.tsx'
+import type { GuardSwitches } from './remote.ts'
 
 /** Categories shown in the tab bar, in display order. */
 export type PluginCategory = 'overview' | 'guard' | 'catalog' | 'usage'
@@ -32,6 +33,15 @@ export interface PluginSectionProps {
   readonly capability: CapabilitySectionInjected
   /** Data source for the 调用统计 view. */
   readonly usageApi: UsagePanelApi
+  /** Guard switch face for 思考限制 and the 总览 status row. */
+  readonly guardRemote: {
+    getGuard?(): Promise<{ ok: true; value: GuardSwitches } | { ok: false; error: { code: string; message: string } }>
+    updateGuard?(change: Partial<GuardSwitches>): Promise<{ ok: true; value: void } | { ok: false; error: { code: string; message: string } }>
+    classifyAll?(): Promise<
+      { ok: true; value: readonly { class: 'resident' | 'on-demand' | 'disabled' }[] }
+      | { ok: false; error: { code: string; message: string } }
+    >
+  }
   /** Copy for the tab bar and the two panels owned here. */
   readonly t: (key: PluginSectionKey) => string
 }
@@ -93,6 +103,7 @@ export function PluginSection(props: PluginSectionProps): ReactElement {
   return createElement(PluginSectionView, {
     capability: props.capability,
     usageApi: props.usageApi,
+    guardRemote: props.guardRemote,
     t: props.t,
     active,
     onSelect: setActive,
@@ -112,7 +123,7 @@ export interface PluginSectionViewProps extends PluginSectionProps {
  * `UsagePanelView`.
  */
 export function PluginSectionView(props: PluginSectionViewProps): ReactElement {
-  const { capability, usageApi, t, active, onSelect } = props
+  const { capability, usageApi, guardRemote, t, active, onSelect } = props
 
   const panel = (
     category: PluginCategory,
@@ -141,8 +152,8 @@ export function PluginSectionView(props: PluginSectionViewProps): ReactElement {
     // `hidden` instead of unmounting: the catalog and usage views own live
     // Remote subscriptions and scroll positions, and re-mounting on every tab
     // click would refetch the whole catalog each time.
-    panel('overview', createElement(OverviewContainer, { t, usageApi })),
-    panel('guard', createElement(GuardPanel, { t })),
+    panel('overview', createElement(OverviewContainer, { t, usageApi, guardRemote, policyRemote: guardRemote })),
+    panel('guard', createElement(GuardContainer, { t, remote: guardRemote, duplicateThresholds: [3, 5, 8] })),
     panel('catalog', createElement(CapabilitySection, capability)),
     panel('usage', createElement(UsagePanel, { api: usageApi })),
   )

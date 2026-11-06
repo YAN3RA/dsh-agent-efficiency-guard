@@ -50,6 +50,8 @@ export interface CapabilityPolicyRemote {
   switchSelfToNpm(version: string): Promise<{ ok: true; value: void } | { ok: false; error: { code: string; message: string } }>
   getConfig(): Promise<{ ok: true; value: Record<string, unknown> } | { ok: false; error: { code: string; message: string } }>
   updateConfig(partial: Record<string, unknown>): Promise<{ ok: true; value: void } | { ok: false; error: { code: string; message: string } }>
+  getGuard?(): Promise<{ ok: true; value: import('./remote.ts').GuardSwitches } | { ok: false; error: { code: string; message: string } }>
+  updateGuard?(change: Partial<import('./remote.ts').GuardSwitches>): Promise<{ ok: true; value: void } | { ok: false; error: { code: string; message: string } }>
   classifyAll(): Promise<{ ok: true; value: CapabilityRow[] } | { ok: false; error: { code: string; message: string } }>
   getDiagnostics?(): Promise<{ ok: true; value: CapabilityDiagnostics } | { ok: false; error: { code: string; message: string } }>
   refresh(): Promise<{ ok: true; value: void } | { ok: false; error: { code: string; message: string } }>

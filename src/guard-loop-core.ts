@@ -35,6 +35,16 @@ export interface GuardLoopOptions {
   readonly repeatThresholds?: readonly number[]
   /** Disable sequence-cycle detection after overlapping dispatches were observed. */
   readonly disableSequenceDetection?: boolean
+  /**
+   * Alternating-cycle detection switch. False reports no cycle at all, leaving
+   * the repeat-detection path (and its reminders) untouched.
+   */
+  readonly alternatingCycleEnabled?: boolean
+  /**
+   * No-progress protection switch. False keeps detection and reminders but makes
+   * no call blockable, so the local denial never fires.
+   */
+  readonly noProgressProtection?: boolean
   /** Exact tool names ignored without changing the recent-call window. */
   readonly excludedTools?: ReadonlySet<string>
   /** Exact tool names ignored without changing the recent-call window. */
@@ -168,7 +178,9 @@ export function observeGuardLoop(
   const previousConsecutive = history.at(-1)?.signature === signature ? history.at(-1) : undefined
   const exactEvidence = unchangedEvidence(previousConsecutive, current)
   const nextHistory = [...history, current].slice(-LOOP_HISTORY_LIMIT)
-  const cycleSize = options.disableSequenceDetection ? 0 : cycleLength(nextHistory)
+  const cycleSize = options.disableSequenceDetection === true || options.alternatingCycleEnabled === false
+    ? 0
+    : cycleLength(nextHistory)
   const alternatingCycle = cycleSize > 0
   let cycleEvidence: NoProgressEvidence = 'none'
   if (alternatingCycle) {
@@ -187,8 +199,10 @@ export function observeGuardLoop(
   const repeatThreshold = thresholds.includes(repeatCount) ? repeatCount : undefined
   const warning = alternatingCycle ? 'alternating-cycle' : repeatThreshold !== undefined ? 'repeat' : 'none'
   const noProgressEvidence = cycleEvidence !== 'none' ? cycleEvidence : exactEvidence
-  const blockCandidate = !options.warnOnlyTools?.has(observation.name) && (cycleEvidence !== 'none'
-    || (exactEvidence !== 'none' && repeatCount >= thresholds[thresholds.length - 1]))
+  const blockCandidate = options.noProgressProtection !== false
+    && !options.warnOnlyTools?.has(observation.name)
+    && (cycleEvidence !== 'none'
+      || (exactEvidence !== 'none' && repeatCount >= thresholds[thresholds.length - 1]))
 
   return {
     state: { turn, history: nextHistory },

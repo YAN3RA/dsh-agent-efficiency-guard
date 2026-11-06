@@ -22,6 +22,10 @@ function setup(config: Parameters<typeof apply>[1] = {}) {
   let cleanup: (() => void) | undefined
   const ctx = {
     logger: { warn, info }, capabilityPolicy,
+    // The Guard reads live switches through `ctx.get('capabilityPolicy')`; a
+    // host without that service falls back to the patch config, which is what
+    // `undefined` models here.
+    get: (key: string) => (key === 'capabilityPolicy' ? undefined : undefined),
     tools: { guard: (callback: (execution: any) => string | undefined) => {
       toolGuard(callback)
       registeredGuard = callback
@@ -248,5 +252,111 @@ describe('Guard Host hooks', () => {
     host.hooks.get('agent/disposed')!({ agent: cleanAgent })
     host.cleanup()
     for (const dispose of host.disposers) expect(dispose).toHaveBeenCalledOnce()
+  })
+})
+
+describe('Guard live switches from the settings page', () => {
+  /**
+   * The settings page writes through the policy service. These tests install a
+   * fake policy that returns those switches, so they fail if the Guard ever
+   * reads a stale copy: the whole point is that a toggle applies without a reload.
+   */
+  function setupWithSwitches(initial: {
+    enabled: boolean; duplicateDetection: boolean
+    alternatingCycleDetection: boolean; noProgressProtection: boolean
+  }) {
+    const switches = { ...initial }
+    const hooks = new Map<string, (...args: any[]) => any>()
+    const info = vi.fn()
+    let registeredGuard: ((execution: any) => string | undefined) | undefined
+    const ctx = {
+      logger: { warn: vi.fn(), info },
+      capabilityPolicy: { metaTools: () => ['meta_search', 'meta_invoke'], getGuard: () => switches },
+      get: (key: string) => (key === 'capabilityPolicy' ? { getGuard: () => switches } : undefined),
+      tools: {
+        guard: (callback: (execution: any) => string | undefined) => {
+          registeredGuard = callback
+          return vi.fn()
+        },
+      },
+      on: (name: string, handler: (...args: any[]) => any) => {
+        hooks.set(name, handler)
+        return vi.fn()
+      },
+      effect: () => undefined,
+    }
+    apply(ctx as unknown as Context, {})
+    return {
+      hooks,
+      switches,
+      guard: () => registeredGuard!,
+      toggle: (patch: Partial<typeof switches>) => Object.assign(switches, patch),
+    }
+  }
+
+  /** Drive N identical calls that all share one result fingerprint. */
+  async function repeatIdentical(
+    host: ReturnType<typeof setupWithSwitches>,
+    agent: { inject: ReturnType<typeof vi.fn> },
+    times: number,
+  ): Promise<string[]> {
+    const denials: string[] = []
+    const next = vi.fn(async () => ({ kind: 'continue' }))
+    await host.hooks.get('agent/pre-step')!({ agent, turn: 1 }, next)
+    for (let i = 0; i < times; i += 1) {
+      const call = execution(agent, 'write', { same: true }, `same-${i}`)
+      const denial = host.guard()(call)
+      if (denial !== undefined) {
+        denials.push(denial)
+        host.hooks.get('tools/result')!(call, {
+          isError: true, error: { message: denial }, content: [{ type: 'text', text: denial }],
+        })
+        continue
+      }
+      await host.hooks.get('tools/execute')!(call, vi.fn(async () => success({ ok: true })))
+      host.hooks.get('tools/result')!(call, success({ ok: true }))
+    }
+    return denials
+  }
+
+  it('produces no reminders and no denials while the master switch is off', async () => {
+    const host = setupWithSwitches({
+      enabled: false, duplicateDetection: true, alternatingCycleDetection: true, noProgressProtection: true,
+    })
+    const agent = { inject: vi.fn() }
+    const denials = await repeatIdentical(host, agent, 9)
+    expect(denials).toEqual([])
+    expect(agent.inject).not.toHaveBeenCalled()
+  })
+
+  it('reminds but never denies once no-progress protection is turned off', async () => {
+    const host = setupWithSwitches({
+      enabled: true, duplicateDetection: true, alternatingCycleDetection: true, noProgressProtection: false,
+    })
+    const agent = { inject: vi.fn() }
+    const denials = await repeatIdentical(host, agent, 9)
+    // Reminders still land…
+    expect(agent.inject).toHaveBeenCalled()
+    // …but the local denial never fires.
+    expect(denials).toEqual([])
+  })
+
+  it('starts denying the repeated call when no-progress protection is on', async () => {
+    const host = setupWithSwitches({
+      enabled: true, duplicateDetection: true, alternatingCycleDetection: true, noProgressProtection: true,
+    })
+    const agent = { inject: vi.fn() }
+    const denials = await repeatIdentical(host, agent, 9)
+    expect(denials.length).toBeGreaterThan(0)
+  })
+
+  it('applies a flipped switch immediately, without re-applying the plugin', async () => {
+    const host = setupWithSwitches({
+      enabled: true, duplicateDetection: true, alternatingCycleDetection: true, noProgressProtection: true,
+    })
+    const agent = { inject: vi.fn() }
+    host.toggle({ enabled: false })
+    const denials = await repeatIdentical(host, agent, 9)
+    expect(denials).toEqual([])
   })
 })

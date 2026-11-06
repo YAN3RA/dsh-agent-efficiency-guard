@@ -130,6 +130,8 @@ const METHODS: ReadonlyArray<readonly [string, readonly string[], readonly strin
   ['switchSelfToNpm', ['version'], []],
   ['getConfig', [], []],
   ['updateConfig', ['partial'], []],
+  ['getGuard', [], []],
+  ['updateGuard', ['change'], []],
   ['classifyAll', [], []],
   ['getDiagnostics', [], []],
   ['refresh', [], []],

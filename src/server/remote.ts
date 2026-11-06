@@ -14,6 +14,7 @@ import type {
   CapabilityClassification,
   CapabilityPolicyService,
   Config as CapabilityPolicyConfig,
+  GuardSwitches,
 } from '../policy.ts'
 import type { CapabilityDetail, SkillDirEntry, CapabilityService, CapabilityDiagnostics, SearchMetadata, SearchMetadataUpdate } from '../registry.ts'
 import { describeSkillEntry, isProjectSkillsDir } from '../locations.ts'
@@ -89,6 +90,23 @@ export class CapabilityPolicyGateway extends TypertRemoteService {
   @Remote('updateConfig')
   async updateConfig(partial: Partial<CapabilityPolicyConfig>): Promise<void> {
     await this.ctx.capabilityPolicy.updateConfig(partial)
+  }
+
+  /** Effective Guard switches (思考限制 page). */
+  @Remote('getGuard')
+  getGuard(): GuardSwitches {
+    return this.ctx.capabilityPolicy.getGuard()
+  }
+
+  /**
+   * Persist and apply Guard switches.
+   *
+   * Writes the plugin state file, not the patch file, so flipping a switch does
+   * not make dsh re-apply (and thereby reload) this plugin.
+   */
+  @Remote('updateGuard')
+  async updateGuard(change: Partial<GuardSwitches>): Promise<void> {
+    await this.ctx.capabilityPolicy.updateGuard(change)
   }
 
   /** Classify every capability currently indexed by `ctx.capability`. */

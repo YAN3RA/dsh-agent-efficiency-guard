@@ -14,15 +14,31 @@ export interface SearchState {
   readonly descriptions: Map<string, string>
 }
 
+/**
+ * Guard switches the settings page owns.
+ *
+ * Stored beside the tier rules rather than in the patch file: dsh watches patch
+ * files and re-applies the whole plugin on every write, so persisting a toggle
+ * there would reload the plugin each time a switch is flipped.
+ */
+export interface GuardState {
+  readonly enabled?: boolean
+  readonly duplicateDetection?: boolean
+  readonly alternatingCycleDetection?: boolean
+  readonly noProgressProtection?: boolean
+}
+
 export interface MenuState {
   readonly tiers: TierState
   readonly search: SearchState
+  readonly guard: GuardState
 }
 
 function emptyState(): MenuState {
   return {
     tiers: { tool: new Map(), skill: new Map() },
     search: { descriptions: new Map() },
+    guard: {},
   }
 }
 
@@ -63,15 +79,32 @@ function parseSearch(value: unknown): SearchState {
   return { ...(limit !== undefined ? { summaryMaxChars: limit as number } : {}), descriptions }
 }
 
+function parseGuard(value: unknown): GuardState {
+  if (value === undefined) return {}
+  const record = object(value, 'guard state')
+  const state: Record<string, boolean> = {}
+  for (const key of ['enabled', 'duplicateDetection', 'alternatingCycleDetection', 'noProgressProtection'] as const) {
+    const field = record[key]
+    if (field === undefined) continue
+    if (typeof field !== 'boolean') throw new Error(`guard.${key} must be a boolean`)
+    state[key] = field
+  }
+  return state
+}
+
 function parseMenuState(source: string): MenuState {
   const record = object(JSON.parse(source) as unknown, 'menu state')
-  if (record['version'] !== 1 && record['version'] !== 2) throw new Error('unsupported menu state version')
+  if (record['version'] !== 1 && record['version'] !== 2 && record['version'] !== 3) {
+    throw new Error('unsupported menu state version')
+  }
   return {
     tiers: {
       tool: parseTierMap(record['tools'], 'tools'),
       skill: parseTierMap(record['skills'], 'skills'),
     },
-    search: record['version'] === 2 ? parseSearch(record['search']) : { descriptions: new Map() },
+    search: record['version'] === 1 ? { descriptions: new Map() } : parseSearch(record['search']),
+    // Version 1/2 files predate the guard section; an absent section is "not set".
+    guard: parseGuard(record['guard']),
   }
 }
 
@@ -135,9 +168,10 @@ async function withStateLock<T>(file: string, action: () => Promise<T>): Promise
 
 async function replaceState(file: string, state: MenuState): Promise<void> {
   const content = JSON.stringify({
-    version: 2,
+    version: 3,
     tools: Object.fromEntries(state.tiers.tool),
     skills: Object.fromEntries(state.tiers.skill),
+    guard: state.guard,
     search: {
       ...(state.search.summaryMaxChars !== undefined ? { summaryMaxChars: state.search.summaryMaxChars } : {}),
       descriptions: Object.fromEntries([...state.search.descriptions].sort(([a], [b]) => a.localeCompare(b))),
@@ -224,4 +258,29 @@ export async function writeSearchState(
     }
     await replaceState(file, { ...state, search })
   })
+}
+
+/** Merge one instance's Guard switch changes with the latest file. */
+export async function writeGuardState(file: string, change: GuardState): Promise<boolean> {
+  const keys = Object.keys(change) as (keyof GuardState)[]
+  if (keys.length === 0) return false
+  return withStateLock(file, async () => {
+    const state = await readMenuState(file)
+    let changed = false
+    const guard: Record<string, boolean> = { ...state.guard }
+    for (const key of keys) {
+      const next = change[key]
+      if (next === undefined || state.guard[key] === next) continue
+      guard[key] = next
+      changed = true
+    }
+    if (!changed) return false
+    await replaceState(file, { ...state, guard })
+    return true
+  })
+}
+
+/** Read only the persisted Guard switch overrides. */
+export async function readGuardState(file: string): Promise<GuardState> {
+  return (await readMenuState(file)).guard
 }
