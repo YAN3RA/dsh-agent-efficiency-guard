@@ -86,13 +86,24 @@ export interface UsageBackfillLimits {
   readonly maxRuntimeMs: number
 }
 
-/** Small, runtime-friendly defaults; callers may raise them explicitly. */
+/**
+ * Defaults sized for a real profile rather than a demo one.
+ *
+ * The earlier 8-session / 5000ms window was smaller than a normal profile's
+ * history (this machine has 9 session directories before any deep history), so
+ * the backfill stopped before it could mark anything `complete` and the page sat
+ * at `unknown` forever. Coverage only becomes `complete` when a session is read
+ * end to end, so a window that never fits a session is the same as no backfill.
+ *
+ * The budget is still bounded and still has a wall-clock cap: this raises the
+ * ceiling, it does not remove the limit. Callers may override every field.
+ */
 export const DEFAULT_USAGE_BACKFILL_LIMITS: UsageBackfillLimits = Object.freeze({
-  maxSessions: 8,
-  maxEventsPerSession: 2_000,
-  maxTotalEvents: 10_000,
+  maxSessions: 64,
+  maxEventsPerSession: 20_000,
+  maxTotalEvents: 200_000,
   pageSize: 100,
-  maxRuntimeMs: 5_000,
+  maxRuntimeMs: 30_000,
 })
 
 /** One metadata-only checkpoint. It deliberately holds no event data. */
