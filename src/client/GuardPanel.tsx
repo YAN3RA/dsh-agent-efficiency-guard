@@ -78,9 +78,13 @@ export function GuardPanel(props: GuardPanelProps): ReactElement {
           ...entry.bodyKeys.map(key => createElement('li', { key, className: 'mc-guard-point' }, t(key)))),
         // The fixed thresholds belong to section A only; they are numbers the
         // implementation owns, so they are read from the prop rather than copy.
+        // Label and value are separate elements rather than one interpolated
+        // string: the separator between them must not be a literal punctuation
+        // mark (`：` is Chinese-only), so spacing does the job in both locales.
         entry.id === 'duplicate_call' && duplicateThresholds !== undefined &&
           createElement('div', { className: 'mc-guard-thresholds' },
-            `${t('guardThresholds')}：${duplicateThresholds.join(' / ')}`),
+            createElement('span', { className: 'mc-guard-thresholds-label' }, t('guardThresholds')),
+            createElement('span', { className: 'mc-guard-thresholds-value' }, duplicateThresholds.join(' / '))),
       ),
     )
   }
