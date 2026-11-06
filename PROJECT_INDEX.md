@@ -1,6 +1,6 @@
 # 项目索引（仓库内）
 
-本文件只索引**本仓库内容**。工作区级的索引在仓库之外（`../PROJECT_INDEX.md`），那里才包含 `02_Design/`、`04_docs/` 等本地目录的路由。
+本文件只索引**本仓库内容**。工作区级的索引在仓库之外（`../PROJECT_INDEX.md`），那里才包含 `02_Design/`、`04_Docs/` 等本地目录的路由。
 
 定位：`dsh-thinking-guard` 是一个 DSH 插件，把工具/技能的能力目录与按需调用（Resident / On-demand / Disabled 三档）与 Agent 效率守卫（重复调用、A-B 循环检测）整合在一起。
 
@@ -44,4 +44,4 @@
 - 架构与模块方案、宿主集成边界、运行时审计、验收报告、各版本发布材料、需求书归档
 - 安装升级卸载的完整排错细节（README 已收录主干）
 
-开发机上用 `../PROJECT_INDEX.md` 或 `../04_docs/02_history/README.md` 定位这些文档。
+开发机上用 `../PROJECT_INDEX.md` 或 `../04_Docs/02_history/README.md` 定位这些文档。
