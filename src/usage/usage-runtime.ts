@@ -354,6 +354,10 @@ function createClassifier(
   warn: (code: string, error?: unknown) => void,
 ): UsageSourceClassifier {
   const capability = createCapabilityLookup(context)
+  // Native ids discovered from the catalog, cached per classifier: the lookup is
+  // a synchronous map read, but re-allocating a Set per call is pointless when a
+  // session makes thousands of calls.
+  let nativeToolIds: readonly string[] | undefined
   return (toolName: string) => {
     let mcpProviders = options.mcpProviders
     if (capability !== undefined) {
@@ -370,14 +374,27 @@ function createClassifier(
         overrides.set(toolName, [server])
         mcpProviders = overrides
       }
+      // A record cataloged under the reserved `built-in` pseudo-server is a
+      // harness-native tool. Without this evidence every native call fell through
+      // to `owner-not-verified`, which is why the whole page reported an unknown
+      // source even though the catalog knew the answer.
+      if (server === BUILT_IN_SERVER) nativeToolIds = addNative(nativeToolIds, toolName)
     }
     const classifierContext: UsageClassifierContext = {
       ...(mcpProviders === undefined ? {} : { mcpProviders }),
       ...(options.pluginToolOwners === undefined ? {} : { pluginToolOwners: options.pluginToolOwners }),
-      ...(options.nativeToolIds === undefined ? {} : { nativeToolIds: options.nativeToolIds }),
+      ...(options.nativeToolIds === undefined && nativeToolIds === undefined
+        ? {}
+        : { nativeToolIds: [...(options.nativeToolIds ?? []), ...(nativeToolIds ?? [])] }),
     }
     return classifyToolCall({ toolId: toolName }, classifierContext)
   }
+}
+
+/** Append one id to an immutable id list, preserving identity when already present. */
+function addNative(current: readonly string[] | undefined, id: string): readonly string[] {
+  if (current === undefined) return [id]
+  return current.includes(id) ? current : [...current, id]
 }
 
 function hasWorkspaceRegistry(context: Context): boolean {

@@ -460,8 +460,43 @@ describe('usage runtime host adapter', () => {
       capabilityKind: 'mcp',
       providerId: 'files',
     })
-    expect(aggregate(runtime.report(), 'bash')).toMatchObject({ capabilityKind: 'unknown' })
+    // A record under the reserved `built-in` pseudo-server IS trusted evidence
+    // that the tool is harness-native. Leaving it unknown made the whole page
+    // report an unknown source even though the catalog knew the answer.
+    expect(aggregate(runtime.report(), 'bash')).toMatchObject({ capabilityKind: 'native' })
     expect(aggregate(runtime.report(), 'mcp__guessed__tool')).toMatchObject({ capabilityKind: 'unknown' })
+  })
+
+  it('attributes several native tools to native without any prefix guessing', () => {
+    // Regression guard for the classification gap: every harness-native tool is
+    // cataloged under the reserved `built-in` pseudo-server, and that record is
+    // the only evidence needed. A name-based guess is deliberately not used.
+    const records = new Map<string, unknown>([
+      ['bash', { origin: { serverName: 'built-in', provider: 'built-in' } }],
+      ['read', { origin: { serverName: 'built-in', provider: 'built-in' } }],
+      ['mcp__github__create_issue', { origin: { serverName: 'github', provider: 'github' } }],
+    ])
+    const host = createFakeHost({
+      services: { capability: { get: (id: string) => records.get(id) } },
+    })
+    const manual = createManualScheduler()
+    const runtime = installUsageRuntime(host.ctx, { schedule: manual.scheduler })
+
+    host.emit('session-a', toolCall(1, { name: 'bash' }))
+    host.emit('session-a', toolResult(2, { callId: 'call-1' }))
+    host.emit('session-a', toolCall(3, { name: 'read' }))
+    host.emit('session-a', toolResult(4, { callId: 'call-3' }))
+    host.emit('session-a', toolCall(5, { name: 'mcp__github__create_issue' }))
+    host.emit('session-a', toolResult(6, { callId: 'call-5' }))
+    manual.runOne()
+
+    const report = runtime.report()
+    expect(aggregate(report, 'bash')).toMatchObject({ capabilityKind: 'native' })
+    expect(aggregate(report, 'read')).toMatchObject({ capabilityKind: 'native' })
+    expect(aggregate(report, 'mcp__github__create_issue')).toMatchObject({
+      capabilityKind: 'mcp',
+      providerId: 'github',
+    })
   })
 
   it('accepts explicit trusted evidence from options without consulting the name', () => {

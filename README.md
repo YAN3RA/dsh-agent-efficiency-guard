@@ -11,7 +11,47 @@
 
 ## 安装
 
-发布版本：[`v0.1.9`](https://github.com/YAN3RA/dsh-agent-efficiency-guard/releases/tag/v0.1.9)。该项目采用 GitHub 安装渠道，未发布 npm 包，也没有独立的 Release tarball asset。请从仓库获取源码，并使用 DSH 插件管理器支持的 Git 或本地包来源安装。
+不需要 npm。插件通过 GitHub Release 附件安装，附件名带内容哈希（见下方「为什么」）。
+
+### 方式一：把这句话发给 DSH 对话（推荐）
+
+复制下面整段，粘贴给 DSH：
+
+```
+帮我安装 dsh-agent-efficiency-guard：先读
+https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/plugin/docs/install.md
+按里面的「方式一」执行；装完提醒我重启 DSH。
+```
+
+DSH 会读安装文档并自己完成：取最新 Release 附件 → 改 profile 依赖 → `pnpm install` → 告诉你重启。
+
+### 方式二：一条命令（Windows PowerShell）
+
+```powershell
+$f="$env:TEMP\install-guard.ps1"; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/plugin/scripts/install.ps1' -OutFile $f; pwsh -NoProfile -File $f
+```
+
+脚本会自动挑最新 Release、处理升级、失败时给出可操作提示。
+
+### 方式三：手动
+
+1. 打开 [Releases](https://github.com/YAN3RA/dsh-agent-efficiency-guard/releases/latest)，下载形如
+   `dsh-agent-efficiency-guard-<版本>-<哈希>.tgz` 的附件。
+2. 把 `~/.dsh/profiles/desktop/package.json` 里 `dependencies` 的
+   `dsh-agent-efficiency-guard` 改成该附件的完整 URL。
+3. 在 `~/.dsh/profiles/desktop` 跑 `pnpm install`，然后重启 DSH。
+
+安装后**必须重启 DSH** 才会加载新代码。
+
+### 为什么附件名带哈希
+
+profile 从附件 URL 安装时，pnpm 按「URL + integrity」缓存解析结果。**用同一个文件名覆盖附件后，pnpm 不会重新下载**——`--force`、`store prune`、删 `node_modules` 都无效，装回去的还是旧 `lib/`。这个坑实际发生过一次。
+
+因此附件名带 tarball 自身的 SHA-256 前 8 位：内容变了 URL 就变，缓存不可能命中旧内容；内容没变则名字不变，重复发布保持幂等。
+
+发版请用 `node scripts/release.mjs`，它会自动构建、打包并按哈希重命名，打印出准确的附件名与上传命令。
+
+完整安装/升级/卸载与排错见 [docs/install.md](docs/install.md)。
 
 ## 配置
 
