@@ -19,7 +19,7 @@
 
 ```
 帮我安装 dsh-agent-efficiency-guard：先读
-https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/plugin/docs/install.md
+https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/docs/install.md
 按里面的「方式一」执行；装完提醒我重启 DSH。
 ```
 
@@ -28,7 +28,7 @@ DSH 会读安装文档并自己完成：取最新 Release 附件 → 改 profile
 ### 方式二：一条命令（Windows PowerShell）
 
 ```powershell
-$f="$env:TEMP\install-guard.ps1"; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/plugin/scripts/install.ps1' -OutFile $f; pwsh -NoProfile -File $f
+$f="$env:TEMP\install-guard.ps1"; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/scripts/install.ps1' -OutFile $f; pwsh -NoProfile -File $f
 ```
 
 脚本会自动挑最新 Release、处理升级、失败时给出可操作提示。

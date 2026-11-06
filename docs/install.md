@@ -11,7 +11,7 @@
 
 ```
 帮我安装 dsh-agent-efficiency-guard：
-1. 读 https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/plugin/docs/install.md 的「方式三：手动」
+1. 读 https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/docs/install.md 的「方式三：手动」
 2. 取 https://api.github.com/repos/YAN3RA/dsh-agent-efficiency-guard/releases/latest 里文件名形如
    dsh-agent-efficiency-guard-<版本>-<哈希>.tgz 的附件
 3. 把 ~/.dsh/profiles/desktop/package.json 的 dependencies 里 dsh-agent-efficiency-guard 改成该附件 URL
@@ -24,13 +24,13 @@
 ## 方式二：一条命令（Windows）
 
 ```powershell
-$f="$env:TEMP\install-guard.ps1"; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/plugin/scripts/install.ps1' -OutFile $f; pwsh -NoProfile -File $f
+$f="$env:TEMP\install-guard.ps1"; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/scripts/install.ps1' -OutFile $f; pwsh -NoProfile -File $f
 ```
 
 需要代理时：
 
 ```powershell
-$f="$env:TEMP\install-guard.ps1"; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/plugin/scripts/install.ps1' -OutFile $f; pwsh -NoProfile -File $f -Proxy http://127.0.0.1:7890
+$f="$env:TEMP\install-guard.ps1"; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/scripts/install.ps1' -OutFile $f; pwsh -NoProfile -File $f -Proxy http://127.0.0.1:7890
 ```
 
 脚本参数：`-Version v0.1.12`（指定版本）、`-Profile desktop`（指定 profile）、`-DryRun`（只看不改）。
