@@ -263,6 +263,25 @@ describe('思考限制 page', () => {
     expect(thresholdLines).toHaveLength(1)
   })
 
+  it('keeps the threshold line free of Chinese-only punctuation', () => {
+    // The label and the numbers are separate nodes on purpose. Interpolating them
+    // into one string forced a literal `：`, which then leaked into the English
+    // UI as "Repeat reminder thresholds：3 / 5 / 8".
+    const element = GuardPanel({
+      t: (key: string) => labels[key] ?? key,
+      enabled: { duplicate_call: true, alternating_cycle: true, no_progress: true },
+      duplicateThresholds: [3, 5, 8],
+    }) as ReactElement
+
+    const text: string[] = []
+    walk(element, (node) => {
+      if (typeof node.props.children === 'string') text.push(node.props.children)
+    })
+    const thresholdLine = text.find(value => value.includes('3 / 5 / 8'))
+    expect(thresholdLine).toBe('3 / 5 / 8')
+    expect(text.some(value => value.includes('：'))).toBe(false)
+  })
+
   it('toggles a section through the callback', () => {
     const calls: Array<[string, boolean]> = []
     const element = GuardPanel({
