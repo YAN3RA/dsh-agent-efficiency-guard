@@ -11,19 +11,25 @@
 
 ## 安装
 
-不需要 npm。插件通过 GitHub Release 附件安装，附件名带内容哈希（见下方「为什么」）。
+不需要 npm（这个包不在 npm registry 上）。安装来源是 GitHub Release 附件，通过 DSH 自己的入口
+`dsh plugin --profile desktop add <附件URL>` 装进 profile——它会同时把包登记进 `dsh.profile.bundles`，
+手工改 `package.json` 再 `pnpm install` **不会**，那样装了也不挂载。
 
 ### 方式一：把这句话发给 DSH 对话（推荐）
 
 复制下面整段，粘贴给 DSH：
 
 ```
-帮我安装 dsh-agent-efficiency-guard：先读
-https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/docs/install.md
-按里面的「方式一」执行；装完提醒我重启 DSH。
+帮我安装 dsh-agent-efficiency-guard。请按顺序做：
+
+1. 读 https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/docs/install.md
+   的「方式三：手动」，用里面的命令完成安装。
+2. 装完确认 ~/.dsh/profiles/desktop/package.json 的 dsh.profile.bundles 里有
+   "dsh-agent-efficiency-guard"（没有就告诉我，别自己猜）。
+3. 报告装到的版本号，然后提醒我重启 DSH。
 ```
 
-DSH 会读安装文档并自己完成：取最新 Release 附件 → 改 profile 依赖 → `pnpm install` → 告诉你重启。
+需要代理就补一句「走代理 http://127.0.0.1:7890」。
 
 ### 方式二：一条命令（Windows PowerShell）
 
@@ -31,15 +37,25 @@ DSH 会读安装文档并自己完成：取最新 Release 附件 → 改 profile
 $f="$env:TEMP\install-guard.ps1"; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/YAN3RA/dsh-agent-efficiency-guard/main/scripts/install.ps1' -OutFile $f; pwsh -NoProfile -File $f
 ```
 
-脚本会自动挑最新 Release、处理升级、失败时给出可操作提示。
+需要代理时末尾加 `-Proxy http://127.0.0.1:7890`；`-DryRun` 只看不改；`-Version v0.1.12` 装指定版本。
+脚本幂等，会自动挑最新 Release、处理升级，并在结束时核对版本、pin 与 `dsh.profile.bundles`。
 
 ### 方式三：手动
 
-1. 打开 [Releases](https://github.com/YAN3RA/dsh-agent-efficiency-guard/releases/latest)，下载形如
-   `dsh-agent-efficiency-guard-<版本>-<哈希>.tgz` 的附件。
-2. 把 `~/.dsh/profiles/desktop/package.json` 里 `dependencies` 的
-   `dsh-agent-efficiency-guard` 改成该附件的完整 URL。
-3. 在 `~/.dsh/profiles/desktop` 跑 `pnpm install`，然后重启 DSH。
+1. 取最新 Release 的带哈希附件 URL：
+
+   ```bash
+   curl -s https://api.github.com/repos/YAN3RA/dsh-agent-efficiency-guard/releases/latest \
+     | grep -o 'https://[^"]*\.tgz'
+   ```
+
+2. 用 DSH 自己的入口安装：
+
+   ```bash
+   dsh plugin --profile desktop add '<上一步输出的 URL>'
+   ```
+
+3. 重启 DSH。
 
 安装后**必须重启 DSH** 才会加载新代码。
 
@@ -51,7 +67,7 @@ profile 从附件 URL 安装时，pnpm 按「URL + integrity」缓存解析结�
 
 发版请用 `node scripts/release.mjs`，它会自动构建、打包并按哈希重命名，打印出准确的附件名与上传命令。
 
-完整安装/升级/卸载与排错见 [docs/install.md](docs/install.md)。
+完整安装/升级/卸载、各来源形式的实测结论与排错见 [docs/install.md](docs/install.md)。
 
 ## 配置
 

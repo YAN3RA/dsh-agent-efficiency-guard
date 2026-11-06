@@ -589,9 +589,13 @@ describe('capability-policy persistence (tier writes)', () => {
 
     await fs.writeFile(stateFile, JSON.stringify({ version: 1, tools: {}, skills: { sneaky: 'on-demand' } }), 'utf8')
     await ctx.capabilityPolicy.updateConfig({ skills: { resident: ['stale', 'moved'] } })
+    // Poll rather than assume the debounce already fired. The write is scheduled
+    // on a 50ms timer, and under parallel test load that timer can land after a
+    // single synchronous read; the poll waits for the observable effect instead
+    // of guessing how long the scheduler needs.
     await expect.poll(async () => {
       return (await readTierState(stateFile)).skill.get('moved')
-    }, { timeout: 5_000 }).toBe('resident')
+    }, { timeout: 10_000, interval: 25 }).toBe('resident')
     expect((await readTierState(stateFile)).skill.get('sneaky')).toBe('on-demand')
     expect(await fs.readFile(patchFile, 'utf8')).toBe(patch)
   })

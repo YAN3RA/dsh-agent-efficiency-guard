@@ -201,6 +201,41 @@ UI 批量把工具设为按需后，patch 里 7 项常驻有 6 项被覆盖（`b
 - `pnpm build` 通过；`install.ps1` 已用真实 Release 端到端跑通（0.1.12 → 0.1.13）
 - 安装产物：实体包、`lib/**/*.js` 全部 `node --check` 通过、`lib/client.js` 哈希与本地一致
 
+## 三点四五、安装必须用 `dsh plugin add`，不是裸 `pnpm install`（重要纠正）
+
+**我最初的安装方案有缺陷，已纠正。**
+
+实测对比（隔离 `DSH_HOME`，未碰生产 profile）：
+
+| 操作 | `dsh.profile.bundles` 结果 |
+| --- | --- |
+| `dsh plugin --profile X add <附件URL>` | 自动追加 `dsh-agent-efficiency-guard` ✅ |
+| 手改 `dependencies` + `pnpm install` | **保持原样，不登记** ❌ |
+
+`dsh plugin` 的 help 原文：`forwarding the remaining arguments to pnpm in the profile directory`，
+但它在 pnpm 之后**多做一步 bundle 协调**，把带 `dsh.bundle.patch` 的新依赖自动写进 `bundles`。
+
+**后果**：只改 `dependencies` 再 `pnpm install`，包装上了但**不会挂载**——插件在 设置 → 插件 里根本不出现。
+这解释了为什么 README 早期版本的手动步骤可能“装成功却没效果”。
+
+**正确做法**（`scripts/install.ps1` 已按此实现）：
+
+```bash
+dsh plugin --profile desktop add <带哈希的附件 URL>
+```
+
+`dependencies` = 包从哪来，`dsh.profile.bundles` = 挂载层列表，**两者都要有**。
+
+### 各安装来源实测结论
+
+| 来源 | 结果 |
+| --- | --- |
+| Release 附件 URL（带哈希） | ✅ 可用，自动登记 bundles |
+| 本地 `.tgz` 绝对路径 | ✅ 可用（记成 `file:`，换机失效） |
+| `git+https://` / `github:owner/repo` | ❌ `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`（`lib/` 未入库，需现场 build） |
+| `link:<目录>` | ⚠️ 能装但不推荐（软链，peer 解析异常） |
+| 裸包名 | ❌ 404（未发布到 npm） |
+
 ## 三点五、安装缓存坑（本轮踩到，务必记住）
 
 **Release 附件 URL 被 pnpm 按 URL 缓存 integrity，覆盖同名附件后不会重新下载。**
