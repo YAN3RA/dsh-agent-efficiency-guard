@@ -195,7 +195,7 @@ ls -t ~/.dsh/profiles/desktop/.plugin-manager/logs | head
 | 找任意文档 | 根目录 `PROJECT_INDEX.md` |
 | 看现在做到哪 / 接手 | 根目录 `HANDOFF.md` |
 | 长期规则与开发规范 | 根目录 `AGENTS.md` |
-| 查架构与模块方案 | 工作区根下 `01_Source_Code/docs/ARCHITECTURE.md`（本地保留） |
+| 查架构与模块方案 | 见项目层 `02_Design/` 下的方案文档（不在本仓库内） |
 | 查历史与归档 | 根目录 `04_Docs/02_history/README.md` |
 
 ## 目录约定
